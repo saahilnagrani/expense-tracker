@@ -513,54 +513,6 @@ async function saveReview() {
   go("expenses");
 }
 
-function reviewRowHtml(r, i) {
-  return `<div class="rev-row">
-    <input type="checkbox" class="revChk" data-i="${i}" checked>
-    <div style="width:100%">
-      <div class="rev-grid">
-        <div class="field"><label>Date</label><input type="date" data-i="${i}" data-f="date" value="${r.date}"></div>
-        <div class="field"><label>Amount (${esc(r.currency || "?")})</label><input type="number" step="0.01" data-i="${i}" data-f="amount" value="${r.amount}"></div>
-        <div class="field"><label>Type</label><select data-i="${i}" data-f="kind"><option value="expense" ${r.kind !== "credit" ? "selected" : ""}>Expense</option><option value="credit" ${r.kind === "credit" ? "selected" : ""}>Credit</option></select></div>
-      </div>
-      <div class="rev-grid mt">
-        <div class="field" style="grid-column:span 2"><label>Description</label><input data-i="${i}" data-f="description" value="${esc(r.description)}"></div>
-        <div class="field"><label>Category</label><select data-i="${i}" data-f="category"><option value="">—</option>${settings.categories.map((c) => `<option ${r.category === c ? "selected" : ""}>${c}</option>`).join("")}</select></div>
-      </div>
-      <div class="hint mt">${esc(r.card || "")} · ${srcLabel(r.source)} · confidence ${(r.confidence * 100 | 0)}%</div>
-    </div>
-  </div>`;
-}
-
-async function saveReview(fresh) {
-  // Apply any inline edits.
-  $$("[data-f]").forEach((el) => {
-    const i = +el.dataset.i, f = el.dataset.f;
-    if (!fresh[i]) return;
-    fresh[i][f] = f === "amount" ? parseFloat(el.value) : el.value;
-  });
-  const selected = $$(".revChk").filter((c) => c.checked).map((c) => fresh[+c.dataset.i]).filter(Boolean);
-  if (!selected.length) return toast("Nothing selected", "err");
-
-  const toSave = selected.map((r) => {
-    const e = {
-      id: uid(), date: r.date, description: r.description,
-      amount: Math.abs(parseFloat(r.amount) || 0), currency: r.currency,
-      category: r.category || guessCategory(r.description), card: r.card,
-      kind: r.kind === "credit" ? "credit" : "expense",
-      source: r.source, bank: r.bank, gmailMessageId: r.gmailMessageId,
-      createdAt: new Date().toISOString(), updatedAt: Date.now(),
-    };
-    e.dedupeKey = dedupeKey(e);
-    return e;
-  }).filter((e) => e.amount > 0);
-
-  await putMany(toSave);
-  expenses = await allExpenses();
-  scheduleSync();
-  toast(`Imported ${toSave.length} transaction(s) ✓`, "ok");
-  go("expenses");
-}
-
 // ---------- Settings ----------
 function renderSettings() {
   const curList = Object.keys(settings.rates);
