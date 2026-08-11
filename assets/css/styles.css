@@ -152,6 +152,9 @@ td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Modal */
 .modal { position: fixed; inset: 0; background: rgba(10,14,20,.5); display: flex; align-items: center; justify-content: center; z-index: 40; padding: 16px; }
+/* The `display:flex` above would otherwise override the [hidden] attribute the
+   JS toggles, leaving the overlay stuck open. Keep hidden meaning hidden. */
+.modal[hidden] { display: none; }
 .modal-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; width: min(680px, 96vw); max-height: 90vh; overflow: auto; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); }
 .modal-head h3 { margin: 0; font-size: 16px; }
