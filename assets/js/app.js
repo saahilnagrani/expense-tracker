@@ -4,7 +4,7 @@ import {
   existingDedupeKeys, loadSettings, saveSettings, uid, recordDeletion,
 } from "./db.js";
 import { syncNow, markPrefsChanged, lastSyncedAt } from "./sync.js";
-import { SOURCES } from "./config.js";
+import { SOURCES, DEFAULT_CATEGORIES } from "./config.js";
 import { toBase, fmt, fmtBase } from "./currency.js";
 import * as GM from "./gmail.js";
 import { extractText, PdfPasswordError } from "./pdf.js";
@@ -41,6 +41,7 @@ async function boot() {
   expenses = await allExpenses();
   await materializeRecurring();
   await migrateRefundCategory();
+  migrateCategoryList();
   updateBasePill();
   document.querySelectorAll(".tab").forEach((t) =>
     t.addEventListener("click", () => go(t.dataset.view)));
@@ -87,6 +88,20 @@ async function migrateRefundCategory() {
     saveSettings(settings); await markPrefsChanged();
   }
   if (refs.length) scheduleSync();
+}
+
+// Ensure any newly-shipped default categories (e.g. "Sports") show up in the
+// dropdowns for users whose saved category list predates them. Adds missing
+// defaults just before "Other" and keeps the user's own custom categories.
+function migrateCategoryList() {
+  const cur = settings.categories || [];
+  const missing = DEFAULT_CATEGORIES.filter((c) => !cur.includes(c));
+  if (!missing.length) return;
+  const at = cur.indexOf("Other");
+  if (at === -1) settings.categories = [...cur, ...missing];
+  else settings.categories = [...cur.slice(0, at), ...missing, ...cur.slice(at)];
+  saveSettings(settings);
+  markPrefsChanged();
 }
 
 // ---- Recurring monthly expenses ----
