@@ -124,6 +124,19 @@ export async function setMeta(key, value) {
   });
 }
 
+// ---- Deletion tombstones (so deletes propagate across devices via sync) ----
+export async function getTombstones() {
+  return getMeta("tombstones", {});
+}
+export async function setTombstones(t) {
+  return setMeta("tombstones", t);
+}
+export async function recordDeletion(id) {
+  const t = await getMeta("tombstones", {});
+  t[id] = Date.now();
+  await setMeta("tombstones", t);
+}
+
 export function uid() {
   return (crypto.randomUUID && crypto.randomUUID()) ||
     "x" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
