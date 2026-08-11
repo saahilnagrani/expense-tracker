@@ -136,14 +136,17 @@ export const SOURCES = [
   { bank: "enbd", label: "Emirates NBD A/c", kind: "statement", default: false,
     from: "statement@emiratesnbd.com", currency: "AED",
     passwordHint: "Check the Emirates NBD email for the password format." },
-  // Spouse-only: her ENBD credit cards come from the same sender as the account
-  // statement, separated by the household Gmail label. They're two different
-  // cards emailed with distinct subjects, so split them by `subject:` so each
-  // shows up as its own card.
+  // ENBD credit cards come from the same sender as the account statement,
+  // separated by the household Gmail label, and are two different cards emailed
+  // with distinct subjects — split them by `subject:` so each is its own card.
+  //  - Noon Visa: spouse-only (wife's card).
+  //  - Etihad Guest Visa: SHARED — you held one (now cancelled) and your wife
+  //    holds one. The household split keeps yours (no label) tagged as yours and
+  //    hers (Harshi Forward label) tagged with her name.
   { bank: "enbd-noon", label: "ENBD Noon Visa", kind: "statement", default: true, spouseOnly: true,
     from: "statement@emiratesnbd.com", currency: "AED", query: 'subject:noon',
     passwordHint: "Check the Emirates NBD email for the password format." },
-  { bank: "enbd-etihad", label: "ENBD Etihad Guest Visa", kind: "statement", default: true, spouseOnly: true,
+  { bank: "enbd-etihad", label: "ENBD Etihad Guest Visa", kind: "statement", default: true, shared: true,
     from: "statement@emiratesnbd.com", currency: "AED", query: 'subject:"etihad guest"',
     passwordHint: "Check the Emirates NBD email for the password format." },
   { bank: "boi-stmt", label: "Bank of India Statement", kind: "statement", default: false,
