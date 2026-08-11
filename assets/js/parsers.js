@@ -121,10 +121,21 @@ export function parseStatementLines(lines, opts = {}) {
 // bank needs custom handling.
 export function parseStatementByBank(bank, lines, opts = {}) {
   const base = { currency: opts.currency || null, card: opts.card || "Statement" };
-  switch (bank) {
-    // e.g. case "adcb": return parseAdcbCustom(lines, base);
-    default: return parseStatementLines(lines, base);
-  }
+  let rows = parseStatementLines(lines, base);
+  if (bank === "wio") rows = rows.map(cleanWioRow);
+  return rows;
+}
+
+// Wio statement lines are prefixed with a "P<reference>" id and include card
+// repayments / transfers to pay other cards. Strip the reference so merchant
+// rules can match, and pre-tag card payments and FX-fee lines.
+const WIO_CARD_PAYMENT = /\brepayment\b|credit card payment|\benbd\b|\badcb\b|\bfab\b|\baxis\b|noon credit|etihad guest/i;
+function cleanWioRow(t) {
+  const description = (t.description || "").replace(/^P\d{6,}\s*/i, "").trim();
+  const out = { ...t, description };
+  if (WIO_CARD_PAYMENT.test(description)) out.category = "Card Payment";
+  else if (/foreign exchange/i.test(description)) out.category = "Fees & Interest";
+  return out;
 }
 
 export function cleanMerchant(s) {

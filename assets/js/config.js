@@ -48,7 +48,7 @@ export const DEFAULT_CATEGORIES = [
 // Food" → Food Delivery must come before the generic "careem" → Transport).
 export const CATEGORY_RULES = [
   // Card bill payments & cashback (also treated as credits, kept out of spend)
-  [/payment received|thank ?you/i, "Card Payment"],
+  [/payment received|thank ?you|credit repayment|\brepayment\b|credit card payment/i, "Card Payment"],
   [/cash\s?-?back|reward\s?redemption/i, "Cashback"],
 
   // Food delivery (before Groceries / generic Careem, Noon)
@@ -88,7 +88,7 @@ export const CATEGORY_RULES = [
   [/vox|cinema|pvr|bookmyshow|game|steam|playstation/i, "Entertainment"],
 
   // Fees (precise — avoid bare "fee" which would catch "coffee")
-  [/interest|finance charge|late fee|annual fee|foreign transaction fee|service fee|markup|\bvat\b/i, "Fees & Interest"],
+  [/interest|finance charge|late fee|annual fee|foreign transaction fee|foreign exchange|service fee|markup|\bvat\b/i, "Fees & Interest"],
 
   // Cash / transfers
   [/\batm\b|cash withdrawal|neft|imps|\bupi\b|transfer/i, "Cash & Transfers"],
