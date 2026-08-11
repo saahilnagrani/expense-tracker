@@ -11,9 +11,7 @@ import { extractText, PdfPasswordError } from "./pdf.js";
 import {
   parseStatementByBank, guessCategory, dedupeKey,
 } from "./parsers.js";
-import {
-  summarize, barRows, monthTrend, currencyLegend, esc,
-} from "./dashboard.js";
+import { esc } from "./dashboard.js";
 
 let settings = loadSettings();
 let expenses = [];
@@ -21,6 +19,19 @@ let expenses = [];
 const views = document.getElementById("views");
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+// Signed spend contribution (in base currency):
+//  - expenses add to spend
+//  - refunds (credits that aren't card payments / cashback / income) subtract
+//  - card payments & cashback count as 0 (neither add nor reduce)
+// Returns null when the currency has no FX rate.
+const NON_SPEND_CREDIT_CATS = new Set(["Card Payment", "Cashback", "Income / Credit"]);
+function spendBase(e) {
+  const b = toBase(e.amount, e.currency, settings);
+  if (b == null) return null;
+  if (e.kind === "credit") return NON_SPEND_CREDIT_CATS.has(e.category) ? 0 : -b;
+  return b;
+}
 
 // ---------- boot ----------
 async function boot() {
@@ -127,57 +138,54 @@ async function runSync(silent) {
   }
 }
 
-// ---------- Dashboard ----------
+// ---------- Dashboard: months × category spend table ----------
 function renderDashboard() {
-  const s = summarize(expenses, settings);
   if (!expenses.length) {
     views.innerHTML = emptyState();
     $("#emptyImport")?.addEventListener("click", () => go("import"));
     $("#emptyAdd")?.addEventListener("click", () => go("add"));
     return;
   }
-  const delta = s.lastBase ? ((s.monthBase - s.lastBase) / s.lastBase) * 100 : null;
+  // Pivot: month -> category -> net spend (base currency).
+  const byMonthCat = {}, catTotals = {}, monthTotals = {};
+  for (const e of expenses) {
+    const b = spendBase(e);
+    if (b == null || b === 0) continue;
+    const mk = e.date.slice(0, 7);
+    const cat = e.category || "Uncategorized";
+    (byMonthCat[mk] ||= {})[cat] = (byMonthCat[mk][cat] || 0) + b;
+    catTotals[cat] = (catTotals[cat] || 0) + b;
+    monthTotals[mk] = (monthTotals[mk] || 0) + b;
+  }
+  const months = Object.keys(monthTotals).sort().reverse();
+  const cats = Object.entries(catTotals).sort((a, b) => b[1] - a[1]).map(([c]) => c);
+  const grand = Object.values(monthTotals).reduce((a, b) => a + b, 0);
+  const cell = (v) => v ? fmtBase(v, settings) : '<span class="muted">—</span>';
+
   views.innerHTML = `
-    <div class="grid cols-3">
-      <div class="card stat">
-        <span class="label">This month (${s.thisMonth})</span>
-        <span class="value">${fmtBase(s.monthBase, settings)}</span>
-        <span class="sub">${delta == null ? "no prior month" :
-          (delta >= 0 ? "▲" : "▼") + " " + Math.abs(delta).toFixed(0) + "% vs last month"}</span>
+    <div class="card">
+      <div class="section-title">Monthly spend by category (${settings.baseCurrency})</div>
+      <div class="table-wrap">
+        <table class="data pivot">
+          <thead><tr>
+            <th>Month</th><th class="amount">Total spend</th>
+            ${cats.map((c) => `<th class="amount">${esc(c)}</th>`).join("")}
+          </tr></thead>
+          <tbody>
+            ${months.map((mk) => `<tr>
+              <td><b>${mk}</b></td>
+              <td class="amount"><b>${fmtBase(monthTotals[mk] || 0, settings)}</b></td>
+              ${cats.map((c) => `<td class="amount">${cell(byMonthCat[mk]?.[c])}</td>`).join("")}
+            </tr>`).join("")}
+          </tbody>
+          <tfoot><tr>
+            <td><b>All months</b></td>
+            <td class="amount"><b>${fmtBase(grand, settings)}</b></td>
+            ${cats.map((c) => `<td class="amount"><b>${fmtBase(catTotals[c], settings)}</b></td>`).join("")}
+          </tr></tfoot>
+        </table>
       </div>
-      <div class="card stat">
-        <span class="label">Last month (${s.lastMonth})</span>
-        <span class="value">${fmtBase(s.lastBase, settings)}</span>
-        <span class="sub">${s.count} transactions tracked</span>
-      </div>
-      <div class="card stat">
-        <span class="label">Total tracked spend</span>
-        <span class="value">${fmtBase(s.totalBase, settings)}</span>
-        <span class="sub">${s.unconverted ? s.unconverted + " item(s) missing an FX rate" : "all converted to " + settings.baseCurrency}</span>
-      </div>
-    </div>
-
-    <div class="grid cols-2 mt">
-      <div class="card">
-        <div class="section-title">Spend by month</div>
-        <div style="display:flex;gap:8px;align-items:flex-end;height:170px">${monthTrend(s.byMonth, settings, { months: 6 })}</div>
-      </div>
-      <div class="card">
-        <div class="section-title">By category</div>
-        <div class="bars">${barRows(s.byCategory, settings)}</div>
-      </div>
-    </div>
-
-    <div class="grid cols-2 mt">
-      <div class="card">
-        <div class="section-title">By card / source</div>
-        <div class="bars">${barRows(s.byCard, settings)}</div>
-      </div>
-      <div class="card">
-        <div class="section-title">By original currency</div>
-        ${currencyLegend(s.byCurrency) || '<div class="hint">No data.</div>'}
-        <div class="hint mt">Totals above are converted to ${settings.baseCurrency} using the rates in Settings.</div>
-      </div>
+      <div class="hint mt">Net spend: refunds reduce the total; card payments and cashback are excluded. Converted to ${settings.baseCurrency} using the rates in Settings.</div>
     </div>`;
 }
 
@@ -216,8 +224,7 @@ function renderExpenses() {
     if (expFilter.merchant && (e.description || "—") !== expFilter.merchant) return false;
     return true;
   });
-  const totalBase = filtered.reduce((a, e) =>
-    a + (e.kind === "credit" ? 0 : (toBase(e.amount, e.currency, settings) || 0)), 0);
+  const totalBase = filtered.reduce((a, e) => a + (spendBase(e) || 0), 0);
 
   views.innerHTML = `
     <div class="card">
@@ -401,6 +408,7 @@ function renderImport() {
         </div>
         ${connected ? `<div class="field" style="align-self:flex-end"><button class="btn secondary" id="disconnectBtn">Disconnect</button></div>` : ""}
       </div>
+      <label class="flex mt" style="gap:6px;cursor:pointer"><input type="checkbox" id="impDebug"> Show raw statement text (debug — helps me fix parsing, e.g. missing cashback)</label>
       <div id="importLog" class="mt"></div>
     </div>
     <div id="reviewArea" class="mt"></div>`;
@@ -434,6 +442,8 @@ async function fetchAndParse() {
   const afterStr = `${after.getFullYear()}/${after.getMonth() + 1}/${after.getDate()}`;
 
   const existing = await existingDedupeKeys();
+  const debug = $("#impDebug")?.checked;
+  const debugRaw = [];
   const parsed = [];
   const problems = [];
   $("#reviewArea").innerHTML = "";
@@ -457,6 +467,7 @@ async function fetchAndParse() {
             const bytes = await GM.getAttachment(ids[i], att.attachmentId);
             const pw = settings.passwords[src.bank] || "";
             const { lines } = await extractText(bytes, pw);
+            if (debug) debugRaw.push({ label: src.label, filename: att.filename, lines });
             rows.push(...parseStatementByBank(src.bank, lines, { currency: src.currency, card: src.label }));
           } catch (err) {
             if (err instanceof PdfPasswordError) {
@@ -483,6 +494,14 @@ async function fetchAndParse() {
 
   setLog("");
   renderReview(parsed, problems);
+  if (debug && debugRaw.length) {
+    const block = debugRaw.map((d) =>
+      `<details style="margin-top:10px"><summary style="cursor:pointer">${esc(d.label)} — ${esc(d.filename)} (${d.lines.length} lines)</summary>` +
+      `<pre style="white-space:pre-wrap;max-height:320px;overflow:auto;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:10px;font-size:12px;margin-top:8px">${esc(d.lines.join("\n"))}</pre></details>`
+    ).join("");
+    $("#reviewArea").insertAdjacentHTML("beforeend",
+      `<div class="card mt"><div class="section-title">Raw statement text (debug)</div><p class="hint">Expand a statement and copy the line for anything that's parsing wrong (e.g. cashback) — paste it to me and I'll fix the parser.</p>${block}</div>`);
+  }
 }
 
 let reviewRows = [];

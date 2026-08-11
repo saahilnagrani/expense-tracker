@@ -188,6 +188,12 @@ tr.revneeds { background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .chip.warn { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
 table.data td { vertical-align: middle; }
 
+/* Dashboard pivot: sticky Month column + emphasized totals row */
+table.data.pivot th:first-child, table.data.pivot td:first-child { position: sticky; left: 0; background: var(--panel); z-index: 1; }
+table.data.pivot tbody tr:hover td:first-child { background: var(--panel-2); }
+table.data tfoot td { border-top: 2px solid var(--border); border-bottom: none; background: var(--panel-2); }
+table.data.pivot tfoot td:first-child { background: var(--panel-2); }
+
 /* ============ Form control polish ============ */
 /* Make native controls (dropdown popups, date pickers, scrollbars) match the
    active theme instead of rendering system-light on a dark UI. */
