@@ -96,29 +96,15 @@ export function parseStatementLines(lines, opts = {}) {
   return dedupeInternal(out);
 }
 
-// Bank-specific wrappers (currently thin — the generic parser handles the
-// heavy lifting; override here when a bank needs special handling).
-export function parseAdcbStatement(lines) {
-  return parseStatementLines(lines, { currency: "AED", card: "ADCB Credit Card" });
-}
-export function parseAxisStatement(lines) {
-  return parseStatementLines(lines, { currency: "INR", card: "Axis Statement" });
-}
-export function parseHdfcStatement(lines) {
-  return parseStatementLines(lines, { currency: "INR", card: "HDFC Statement" });
-}
-export function parseBoiStatement(lines) {
-  return parseStatementLines(lines, { currency: "INR", card: "BoI Statement" });
-}
-
-// Dispatch by bank id (see SOURCES in config.js).
-export function parseStatementByBank(bank, lines) {
+// Dispatch by bank id. `opts.currency` and `opts.card` come from the source's
+// config entry so every bank tags its transactions correctly. The generic
+// table parser handles all layouts today; add a `case` here when a specific
+// bank needs custom handling.
+export function parseStatementByBank(bank, lines, opts = {}) {
+  const base = { currency: opts.currency || null, card: opts.card || "Statement" };
   switch (bank) {
-    case "adcb": return parseAdcbStatement(lines);
-    case "axis-stmt": return parseAxisStatement(lines);
-    case "hdfc-stmt": return parseHdfcStatement(lines);
-    case "boi-stmt": return parseBoiStatement(lines);
-    default: return parseStatementLines(lines, {});
+    // e.g. case "adcb": return parseAdcbCustom(lines, base);
+    default: return parseStatementLines(lines, base);
   }
 }
 

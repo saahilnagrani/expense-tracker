@@ -83,8 +83,7 @@ ID**. It's free.
 
 ## How importing works
 
-1. You pick which banks to pull statements from (ADCB, Axis, HDFC, Bank of
-   India) and a look-back window.
+1. You pick which banks to pull statements from and a look-back window.
 2. The app searches Gmail for matching emails, downloads statement PDFs,
    decrypts them with your saved password, and extracts the transaction rows.
 3. Every parsed transaction is shown in an **editable review table**. You
@@ -95,18 +94,36 @@ ID**. It's free.
 
 ### Supported sources (in `assets/js/config.js`)
 
-| Bank | Sender | Type | Currency |
-|------|--------|------|----------|
-| ADCB Credit Card | `estatement@adcb.com` | statement PDF | AED |
-| Axis Bank Statement | `statements@axis.bank.in` | statement PDF | INR |
-| HDFC SmartStatement | `hdfcbanksmartstatement@hdfcbank.bank.in` | statement PDF | INR |
-| Bank of India | `noreply-estatement@alerts.bankofindia.bank.in` | statement PDF | INR |
+| Bank | Sender | Currency | On by default |
+|------|--------|----------|---------------|
+| ADCB Credit Card | `estatement@adcb.com` | AED | ✅ |
+| Axis Credit Card | `cc.statements@axis.bank.in` | INR | ✅ |
+| FAB Credit Card | `estatement@bankfab.com` | AED | ✅ |
+| Axis Bank A/c Statement | `statements@axis.bank.in` | INR | — |
+| HDFC SmartStatement | `hdfcbanksmartstatement@hdfcbank.bank.in` | INR | — |
+| Emirates NBD A/c | `statement@emiratesnbd.com` | AED | — |
+| Bank of India | `noreply-estatement@alerts.bankofindia.bank.in` | INR | — |
+
+Credit-card statements are enabled by default; **bank-account** statements are
+off by default so account debits don't double-count spend you already see on a
+card — tick them on in the Import screen if you want them.
 
 Every source is a **statement PDF** — the app does not read individual
-per-transaction alert emails. Parsing bank statements from PDF text is
-inherently fuzzy (layouts differ), which is exactly why the review step
-exists. To add or tune a bank, edit `SOURCES` in `config.js` and the matching
-parser in `assets/js/parsers.js`.
+per-transaction alert emails.
+
+**Emails that skip the inbox are still imported.** The search matches by the
+bank's `from:` address and covers archived/labelled mail (everything except
+Spam/Trash), so statements a Gmail filter auto-labels and archives are picked
+up like any other. The one case that is *not* covered is a statement
+**forwarded from a person's own email** — then the sender is that person, not
+the bank, so add their address (or the bank's) to `SOURCES`.
+
+**Wio** credit statements can't be imported — those emails just link to the Wio
+app and carry no PDF. Add Wio spend via manual entry.
+
+Parsing bank statements from PDF text is inherently fuzzy (layouts differ),
+which is exactly why the review step exists. To add or tune a bank, edit
+`SOURCES` in `config.js` and the matching parser in `assets/js/parsers.js`.
 
 ---
 

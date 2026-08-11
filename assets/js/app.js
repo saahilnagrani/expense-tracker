@@ -313,7 +313,7 @@ async function fetchAndParse() {
             const bytes = await GM.getAttachment(ids[i], att.attachmentId);
             const pw = settings.passwords[src.bank] || "";
             const { lines } = await extractText(bytes, pw);
-            rows.push(...parseStatementByBank(src.bank, lines));
+            rows.push(...parseStatementByBank(src.bank, lines, { currency: src.currency, card: src.label }));
           } catch (err) {
             if (err instanceof PdfPasswordError) {
               problems.push(`🔒 ${src.label}: ${att.filename} needs a password. Add it in Settings (${src.passwordHint || "see the email"}).`);

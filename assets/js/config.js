@@ -53,20 +53,35 @@ export const CATEGORY_RULES = [
   [/interest|finance charge|late fee|annual fee|vat|markup|fee/i, "Fees & Interest"],
 ];
 
-// Known senders that email credit-card statements as PDF attachments.
-// `kind` is always "statement" (a PDF to open and parse). `bank` is a stable
-// id used for saved PDF passwords and card labels.
+// Known senders that email statements as PDF attachments. `kind` is always
+// "statement" (a PDF to open and parse). `bank` is a stable id used for saved
+// PDF passwords and card labels. `default` = whether it's enabled for import
+// out of the box (credit cards on; bank-account statements off, so account
+// debits don't double-count spend you already see on a card). The Gmail
+// search matches by `from:` and covers archived/labelled mail, so statements
+// that skip the inbox (e.g. auto-labelled by a filter) are still imported.
 export const SOURCES = [
-  { bank: "adcb", label: "ADCB Credit Card", kind: "statement",
+  // --- Credit cards (on by default) ---
+  { bank: "adcb", label: "ADCB Credit Card", kind: "statement", default: true,
     from: "estatement@adcb.com", currency: "AED",
     passwordHint: "Your ADCB Customer ID (SMS 'CID' to 2626 to retrieve)." },
-  { bank: "axis-stmt", label: "Axis Bank Statement", kind: "statement",
+  { bank: "axis-cc", label: "Axis Credit Card", kind: "statement", default: true,
+    from: "cc.statements@axis.bank.in", currency: "INR",
+    passwordHint: "First 4 letters of name (CAPS) + DOB as DDMM, e.g. CKAJ1102 — or + last 4 digits of the card." },
+  { bank: "fab", label: "FAB Credit Card", kind: "statement", default: true,
+    from: "estatement@bankfab.com", currency: "AED",
+    passwordHint: "8 digits: your year of birth + last 4 digits of your registered mobile, e.g. 19804567." },
+  // --- Bank-account statements (off by default; enable if you want them) ---
+  { bank: "axis-acct", label: "Axis Bank A/c Statement", kind: "statement", default: false,
     from: "statements@axis.bank.in", currency: "INR",
-    passwordHint: "4 letters of your name (CAPS) + 9-digit Customer ID, or + 4-digit DOB (DDMM)." },
-  { bank: "hdfc-stmt", label: "HDFC SmartStatement", kind: "statement",
+    passwordHint: "4 letters of name (CAPS) + 9-digit Customer ID, or + 4-digit DOB (DDMM)." },
+  { bank: "hdfc-stmt", label: "HDFC SmartStatement", kind: "statement", default: false,
     from: "hdfcbanksmartstatement@hdfcbank.bank.in", currency: "INR",
     passwordHint: "Check the HDFC email for the exact password format." },
-  { bank: "boi-stmt", label: "Bank of India Statement", kind: "statement",
+  { bank: "enbd", label: "Emirates NBD A/c", kind: "statement", default: false,
+    from: "statement@emiratesnbd.com", currency: "AED",
+    passwordHint: "Check the Emirates NBD email for the password format." },
+  { bank: "boi-stmt", label: "Bank of India Statement", kind: "statement", default: false,
     from: "noreply-estatement@alerts.bankofindia.bank.in", currency: "INR",
     passwordHint: "Check the Bank of India email for the password format." },
 ];
@@ -81,8 +96,8 @@ export function defaultSettings() {
     googleClientId: "",
     // Per-bank saved PDF passwords (stored locally in this browser only).
     passwords: {},
-    // Which sources are enabled for import.
-    enabledSources: SOURCES.map((s) => s.bank),
+    // Which sources are enabled for import (credit cards on by default).
+    enabledSources: SOURCES.filter((s) => s.default).map((s) => s.bank),
     lookbackMonths: 12,
   };
 }
