@@ -32,12 +32,35 @@ function sortedCats() {
   return [...(settings.categories || [])].sort((a, b) => a.localeCompare(b));
 }
 
-// Render "my" PDF-password fields for a set of sources.
-function pwFields(list) {
-  return list.map((s) => `
-    <div class="field"><label>${esc(s.label)}</label>
-      <input type="password" class="pwIn" data-bank="${s.bank}" value="${esc(settings.passwords[s.bank] || "")}" placeholder="${esc(s.passwordHint || "PDF password")}">
-    </div>`).join("");
+// One unified password table: each card/account is a row, with a column for
+// your password and one for the household member's. A dash marks a cell that
+// doesn't apply (their-only card in your column, or an account in theirs). The
+// "theirs" column and their-only rows hide when Household mode is off (CSS).
+function pwTable() {
+  const on = settings.spouseEnabled;
+  const spName = settings.spouseName || "Their";
+  const mineCell = (s) => s.spouseOnly
+    ? `<span class="pw-na">—</span>`
+    : `<input type="password" class="pwIn" data-bank="${s.bank}" value="${esc(settings.passwords[s.bank] || "")}" placeholder="${esc(s.passwordHint || "PDF password")}">`;
+  const hersCell = (s) => (s.shared || s.spouseOnly)
+    ? `<input type="password" class="spPw" data-bank="${s.bank}" value="${esc((settings.spousePasswords || {})[s.bank] || "")}" placeholder="${esc(s.passwordHint || "PDF password")}">`
+    : `<span class="pw-na">—</span>`;
+  const row = (s) => `<tr class="${s.spouseOnly ? "sponly-row" : ""}">
+    <td>${esc(s.label)}</td>
+    <td>${mineCell(s)}</td>
+    <td class="spcol">${hersCell(s)}</td>
+  </tr>`;
+  const cc = SOURCES.filter((s) => s.kind === "statement" && !s.acct);
+  const acct = SOURCES.filter((s) => s.kind === "statement" && s.acct);
+  return `<table class="pw-table ${on ? "" : "hide-spouse"}">
+    <thead><tr><th>Card / account</th><th>Your password</th><th class="spcol">${esc(spName)}'s password</th></tr></thead>
+    <tbody>
+      <tr class="grouprow"><td colspan="3">Credit cards</td></tr>
+      ${cc.map(row).join("")}
+      <tr class="grouprow"><td colspan="3">Bank-account statements</td></tr>
+      ${acct.map(row).join("")}
+    </tbody>
+  </table>`;
 }
 
 function spendBase(e) {
@@ -484,9 +507,18 @@ function renderImport() {
       <div class="section-title">Import credit-card transactions from Gmail</div>
       ${!hasClientId ? `<div class="warnbox">No Google Client ID set yet. Add one in <a href="#settings" id="toSettings">Settings → Gmail connection</a> to enable importing. (One-time setup — the README has step-by-step instructions.)</div>` : ""}
       <p class="hint">Reads matching bank emails in your account, parses the transactions, and shows them for your review before anything is saved. Read-only access; nothing is sent anywhere except Google.</p>
-      <div class="pill-tabs mt">
-        ${SOURCES.map((s) => `<label class="chip" style="cursor:pointer;user-select:none"><input type="checkbox" class="srcChk" value="${s.bank}" ${settings.enabledSources.includes(s.bank) ? "checked" : ""} style="margin-right:6px">${esc(s.label)}</label>`).join("")}
-      </div>
+      ${(() => {
+        const spName = settings.spouseName || "theirs";
+        const chip = (s) => `<label class="chip" style="cursor:pointer;user-select:none"><input type="checkbox" class="srcChk" value="${s.bank}" ${settings.enabledSources.includes(s.bank) ? "checked" : ""} style="margin-right:6px">${esc(s.label)}${s.spouseOnly ? ` <span class="chip-sub">(${esc(spName)})</span>` : ""}</label>`;
+        const vis = (s) => s.kind === "statement" && (!s.spouseOnly || settings.spouseEnabled);
+        const cc = SOURCES.filter((s) => vis(s) && !s.acct);
+        const acct = SOURCES.filter((s) => vis(s) && s.acct);
+        return `
+        <div class="pill-group-label mt">Credit cards</div>
+        <div class="pill-tabs">${cc.map(chip).join("")}</div>
+        <div class="pill-group-label mt">Bank-account statements</div>
+        <div class="pill-tabs">${acct.map(chip).join("")}</div>`;
+      })()}
       <div class="row mt">
         <div class="field" style="max-width:200px"><label>Look back</label>
           <select id="lookback">
@@ -775,11 +807,8 @@ function renderSettings() {
         <div class="field"><label>Google OAuth Client ID</label><input id="setClient" value="${esc(settings.googleClientId)}" placeholder="xxxxx.apps.googleusercontent.com"></div>
         <p class="hint">Needed to read statements from Gmail on a static site. Create a free <b>Web</b> OAuth Client ID in Google Cloud, enable the Gmail API, and add this site's URL as an authorized JavaScript origin. Full walkthrough in the README.</p>
         <div class="section-title mt">Statement PDF passwords</div>
-        <p class="hint">Bank statement PDFs are encrypted. Passwords are stored only in this browser.</p>
-        <div class="pw-group-label">Credit cards</div>
-        ${pwFields(SOURCES.filter((s) => !s.spouseOnly && !s.acct))}
-        <div class="pw-group-label mt">Bank-account statements</div>
-        ${pwFields(SOURCES.filter((s) => !s.spouseOnly && s.acct))}
+        <p class="hint">Bank statement PDFs are encrypted. Passwords are stored only in this browser.${settings.spouseEnabled ? " A dash means that card isn't that person's." : ""}</p>
+        ${pwTable()}
       </div>
     </div>
 
@@ -805,9 +834,7 @@ function renderSettings() {
           <div class="field"><label>Their name (tag)</label><input id="spName" value="${esc(settings.spouseName)}" placeholder="e.g. Harshita"></div>
           <div class="field"><label>Gmail label on their forwarded statements</label><input id="spLabel" value="${esc(settings.spouseLabel)}" placeholder="e.g. Harshi Forward"></div>
         </div>
-        <div class="section-title mt">Their statement PDF passwords</div>
-        <div class="pw-group-label">Their credit cards</div>
-        ${SOURCES.filter((s) => s.shared || s.spouseOnly).map((s) => `<div class="field"><label>${esc(s.label)} — ${esc(settings.spouseName || "their")} password</label><input type="password" class="spPw" data-bank="${s.bank}" value="${esc((settings.spousePasswords || {})[s.bank] || "")}" placeholder="${esc(s.passwordHint || "PDF password")}"></div>`).join("")}
+        <p class="hint">Their PDF passwords appear as a second column in the <b>Statement PDF passwords</b> table above once this is on.</p>
       </div>
     </div>
 
@@ -876,7 +903,11 @@ function renderSettings() {
     if (!confirm("Delete ALL transactions? This cannot be undone.")) return;
     await clearAll(); expenses = []; toast("All data deleted", "ok"); go("dashboard");
   });
-  $("#spEnabled")?.addEventListener("change", (e) => { const el = $("#spOpts"); if (el) el.style.display = e.target.checked ? "" : "none"; });
+  $("#spEnabled")?.addEventListener("change", (e) => {
+    const on = e.target.checked;
+    const el = $("#spOpts"); if (el) el.style.display = on ? "" : "none";
+    const tbl = $(".pw-table"); if (tbl) tbl.classList.toggle("hide-spouse", !on);
+  });
   $("#saveSet").addEventListener("click", async () => {
     settings.baseCurrency = $("#setBase").value;
     settings.googleClientId = $("#setClient").value.trim();
