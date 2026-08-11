@@ -49,7 +49,7 @@ export const DEFAULT_CATEGORIES = [
 export const CATEGORY_RULES = [
   // Card bill payments & cashback (also treated as credits, kept out of spend)
   [/payment received|thank ?you/i, "Card Payment"],
-  [/cashback/i, "Cashback"],
+  [/cash\s?-?back|reward\s?redemption/i, "Cashback"],
 
   // Food delivery (before Groceries / generic Careem, Noon)
   [/careem food|talabat|noon food|keeta|deliveroo|hardees?/i, "Food Delivery"],
