@@ -3,9 +3,9 @@
 A private, **static** expense tracker that runs entirely in your browser — no
 server, no database, nothing to host but plain files. It can:
 
-- **Import credit-card transactions from Gmail** — reads your bank emails
-  (statement PDFs and transaction alerts), parses them, and lets you **review
-  and edit** every row before saving.
+- **Import credit-card transactions from Gmail** — reads the statement PDFs
+  the banks email you, parses the transactions out of them, and lets you
+  **review and edit** every row before saving.
 - **Add other expenses by hand** (cash, transfers, anything not on a card).
 - Track spend in **multiple currencies** (e.g. AED + INR) and roll everything
   up into one **base currency** you choose.
@@ -83,8 +83,8 @@ ID**. It's free.
 
 ## How importing works
 
-1. You pick which sources to pull (ADCB, Axis, HDFC, Bank of India, Axis
-   alerts) and a look-back window.
+1. You pick which banks to pull statements from (ADCB, Axis, HDFC, Bank of
+   India) and a look-back window.
 2. The app searches Gmail for matching emails, downloads statement PDFs,
    decrypts them with your saved password, and extracts the transaction rows.
 3. Every parsed transaction is shown in an **editable review table**. You
@@ -101,11 +101,12 @@ ID**. It's free.
 | Axis Bank Statement | `statements@axis.bank.in` | statement PDF | INR |
 | HDFC SmartStatement | `hdfcbanksmartstatement@hdfcbank.bank.in` | statement PDF | INR |
 | Bank of India | `noreply-estatement@alerts.bankofindia.bank.in` | statement PDF | INR |
-| Axis Card Alerts | `alerts@axis.bank.in` | per-transaction email | INR |
 
-Parsing bank statements from PDF text is inherently fuzzy (layouts differ),
-which is exactly why the review step exists. To add or tune a bank, edit
-`SOURCES` in `config.js` and the matching parser in `assets/js/parsers.js`.
+Every source is a **statement PDF** — the app does not read individual
+per-transaction alert emails. Parsing bank statements from PDF text is
+inherently fuzzy (layouts differ), which is exactly why the review step
+exists. To add or tune a bank, edit `SOURCES` in `config.js` and the matching
+parser in `assets/js/parsers.js`.
 
 ---
 
@@ -121,7 +122,7 @@ assets/js/
   currency.js              FX conversion + amount parsing
   gmail.js                 Google sign-in + Gmail read-only API
   pdf.js                   PDF text extraction (wraps pdf.js)
-  parsers.js               Statement / alert parsers → transactions
+  parsers.js               Statement PDF parsers → transactions
   dashboard.js             Aggregations + charts
 vendor/pdfjs/              Bundled pdf.js (no CDN needed)
 ```

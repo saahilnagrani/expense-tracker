@@ -53,24 +53,22 @@ export const CATEGORY_RULES = [
   [/interest|finance charge|late fee|annual fee|vat|markup|fee/i, "Fees & Interest"],
 ];
 
-// Known senders that carry credit-card statements (PDF) or transaction alerts.
-// `kind`: "statement" = PDF attachment to parse; "alert" = per-txn email body.
-// `bank` is a stable id used for saved PDF passwords and card labels.
+// Known senders that email credit-card statements as PDF attachments.
+// `kind` is always "statement" (a PDF to open and parse). `bank` is a stable
+// id used for saved PDF passwords and card labels.
 export const SOURCES = [
   { bank: "adcb", label: "ADCB Credit Card", kind: "statement",
     from: "estatement@adcb.com", currency: "AED",
     passwordHint: "Your ADCB Customer ID (SMS 'CID' to 2626 to retrieve)." },
   { bank: "axis-stmt", label: "Axis Bank Statement", kind: "statement",
     from: "statements@axis.bank.in", currency: "INR",
-    passwordHint: "Usually name (first 4 letters, caps) + DDMM of birth — check the email." },
+    passwordHint: "4 letters of your name (CAPS) + 9-digit Customer ID, or + 4-digit DOB (DDMM)." },
   { bank: "hdfc-stmt", label: "HDFC SmartStatement", kind: "statement",
     from: "hdfcbanksmartstatement@hdfcbank.bank.in", currency: "INR",
     passwordHint: "Check the HDFC email for the exact password format." },
   { bank: "boi-stmt", label: "Bank of India Statement", kind: "statement",
     from: "noreply-estatement@alerts.bankofindia.bank.in", currency: "INR",
     passwordHint: "Check the Bank of India email for the password format." },
-  { bank: "axis-alert", label: "Axis Card Alerts", kind: "alert",
-    from: "alerts@axis.bank.in", currency: "INR", passwordHint: "" },
 ];
 
 export const SETTINGS_KEY = "et.settings.v1";

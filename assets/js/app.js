@@ -8,7 +8,7 @@ import { toBase, fmt, fmtBase } from "./currency.js";
 import * as GM from "./gmail.js";
 import { extractText, PdfPasswordError } from "./pdf.js";
 import {
-  parseAxisAlert, parseStatementByBank, guessCategory, dedupeKey, cleanMerchant,
+  parseStatementByBank, guessCategory, dedupeKey,
 } from "./parsers.js";
 import {
   summarize, barRows, monthTrend, currencyLegend, esc,
@@ -297,35 +297,28 @@ async function fetchAndParse() {
   for (const src of chosen) {
     try {
       setLog(`Searching ${esc(src.label)}…`);
-      const q = src.kind === "statement"
-        ? `from:${src.from} has:attachment filename:pdf after:${afterStr}`
-        : `from:${src.from} after:${afterStr}`;
+      const q = `from:${src.from} has:attachment filename:pdf after:${afterStr}`;
       const ids = await GM.searchMessages(q, 60);
-      setLog(`Found ${ids.length} email(s) for ${esc(src.label)}. Reading…`);
+      setLog(`Found ${ids.length} statement email(s) for ${esc(src.label)}. Reading…`);
 
       for (let i = 0; i < ids.length; i++) {
-        setLog(`${esc(src.label)}: reading email ${i + 1}/${ids.length}…`);
+        setLog(`${esc(src.label)}: reading statement ${i + 1}/${ids.length}…`);
         const msg = await GM.getMessage(ids[i]);
-        const { text, pdfs } = GM.extractParts(msg);
-        const when = GM.messageDate(msg).toISOString().slice(0, 10);
+        const { pdfs } = GM.extractParts(msg);
+        if (!pdfs.length) continue;
 
-        let rows = [];
-        if (src.kind === "alert") {
-          rows = parseAxisAlert(text, { date: when });
-        } else {
-          if (!pdfs.length) continue;
-          for (const att of pdfs) {
-            try {
-              const bytes = await GM.getAttachment(ids[i], att.attachmentId);
-              const pw = settings.passwords[src.bank] || "";
-              const { lines } = await extractText(bytes, pw);
-              rows.push(...parseStatementByBank(src.bank, lines));
-            } catch (err) {
-              if (err instanceof PdfPasswordError) {
-                problems.push(`🔒 ${src.label}: ${att.filename} needs a password. Add it in Settings (${src.passwordHint || "see the email"}).`);
-              } else {
-                problems.push(`⚠️ ${src.label}: couldn't read ${att.filename} — ${err.message}`);
-              }
+        const rows = [];
+        for (const att of pdfs) {
+          try {
+            const bytes = await GM.getAttachment(ids[i], att.attachmentId);
+            const pw = settings.passwords[src.bank] || "";
+            const { lines } = await extractText(bytes, pw);
+            rows.push(...parseStatementByBank(src.bank, lines));
+          } catch (err) {
+            if (err instanceof PdfPasswordError) {
+              problems.push(`🔒 ${src.label}: ${att.filename} needs a password. Add it in Settings (${src.passwordHint || "see the email"}).`);
+            } else {
+              problems.push(`⚠️ ${src.label}: couldn't read ${att.filename} — ${err.message}`);
             }
           }
         }

@@ -1,5 +1,5 @@
-// Turn raw sources (statement PDF text, or transaction-alert email text)
-// into normalized transaction objects the app can review and store.
+// Turn statement PDF text into normalized transaction objects the app can
+// review and store.
 //
 // A parsed transaction looks like:
 //   { date: "YYYY-MM-DD", description, amount (>0), currency,
@@ -10,7 +10,6 @@
 // in an editable review table before anything is saved. Add or tune a bank
 // by editing the matching function below.
 
-import { parseAmount, normCurrency } from "./currency.js";
 import { CATEGORY_RULES } from "./config.js";
 
 const MONTHS = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
@@ -47,37 +46,6 @@ export function parseDate(s) {
 export function guessCategory(desc) {
   for (const [re, cat] of CATEGORY_RULES) if (re.test(desc)) return cat;
   return "";
-}
-
-// ---------------------------------------------------------------------------
-// Alert email parser: Axis Bank per-transaction alerts (alerts@axis.bank.in)
-// Body is highly structured: labelled Amount / Merchant / Card / Date & Time.
-// ---------------------------------------------------------------------------
-export function parseAxisAlert(text, meta = {}) {
-  const grab = (label) => {
-    const re = new RegExp(label + "\\s*:?\\s*\\n?\\s*([^\\n]+)", "i");
-    const m = text.match(re);
-    return m ? m[1].trim() : "";
-  };
-  const amtRaw = grab("Transaction Amount");
-  const merchant = grab("Merchant Name");
-  const cardRaw = grab("Axis Bank Credit Card No\\.?") || grab("Card No\\.?");
-  const dt = grab("Date & Time") || grab("Date");
-
-  const amt = parseAmount(amtRaw, "INR");
-  if (!amt) return [];
-  const card = (cardRaw.match(/X+\s*\d{3,4}/) || [cardRaw])[0].replace(/\s+/g, "");
-  const date = parseDate(dt) || meta.date || null;
-  if (!date) return [];
-  return [{
-    date,
-    description: cleanMerchant(merchant) || "Axis card transaction",
-    amount: Math.abs(amt.amount),
-    currency: amt.currency || "INR",
-    kind: "expense",
-    card: card ? `Axis ${card}` : "Axis Credit Card",
-    confidence: 0.95,
-  }];
 }
 
 // ---------------------------------------------------------------------------
