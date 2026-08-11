@@ -91,7 +91,7 @@ main { max-width: 1080px; margin: 0 auto; padding: 22px 20px 80px; }
 .field label { font-size: 13px; font-weight: 600; color: var(--muted); }
 .field input, .field select, .field textarea {
   padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
-  background: var(--panel-2); width: 100%;
+  background-color: var(--panel-2); width: 100%;
 }
 .field input:focus, .field select:focus, .field textarea:focus { outline: 2px solid var(--brand); border-color: transparent; }
 .row { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -180,9 +180,68 @@ td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; }
 .pill-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 
 /* Compact inline-editable cells in the import review table */
-.cellin { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); width: 100%; font-size: 13px; }
+.cellin { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background-color: var(--panel-2); width: 100%; font-size: 13px; }
 .cellin:focus { outline: 2px solid var(--brand); border-color: transparent; }
 input.cellin.amt { text-align: right; font-variant-numeric: tabular-nums; }
 tr.revneeds { background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .chip.warn { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
 table.data td { vertical-align: middle; }
+
+/* ============ Form control polish ============ */
+/* Make native controls (dropdown popups, date pickers, scrollbars) match the
+   active theme instead of rendering system-light on a dark UI. */
+:root { color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { color-scheme: dark; } }
+
+input, select, textarea { font-family: inherit; font-size: 14px; color: var(--text); }
+
+/* Custom-styled selects with a themed chevron (no ugly native arrow). */
+select {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  background-color: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 34px 9px 12px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239aa4b2' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+select:hover { border-color: color-mix(in srgb, var(--brand) 45%, var(--border)); }
+.field select { padding-right: 34px; }
+
+input, textarea {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background-color: var(--panel-2);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+input[type="text"], input[type="number"], input[type="date"], input[type="password"], input[type="search"], input:not([type]) { padding: 9px 12px; }
+input::placeholder { color: var(--muted); opacity: .8; }
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent);
+}
+
+/* Filter selects (Expenses / Review toolbars) */
+.fsel { padding: 9px 32px 9px 12px; border: 1px solid var(--border); border-radius: 10px; background-color: var(--panel-2); font-size: 14px; }
+
+/* Compact inline category select in the Expenses table */
+.catsel { padding: 6px 26px 6px 10px; border: 1px solid var(--border); border-radius: 8px; background-color: var(--panel-2); font-size: 13px; max-width: 180px; }
+.catsel:hover { border-color: color-mix(in srgb, var(--brand) 45%, var(--border)); }
+select.cellin { padding-right: 26px; background-position: right 8px center; }
+
+/* Themed checkboxes */
+input[type="checkbox"] { accent-color: var(--brand); width: 16px; height: 16px; cursor: pointer; }
+
+/* Button feel */
+.btn { transition: background .15s ease, filter .15s ease, transform .04s ease, box-shadow .15s ease; }
+.btn:not(.secondary):not(.ghost):not(.danger) { box-shadow: 0 1px 2px color-mix(in srgb, var(--brand) 40%, transparent); }
+.btn:active { transform: translateY(1px); }
+.btn:focus-visible, .icon-btn:focus-visible, .tab:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* Date input calendar icon tint in dark mode */
+input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: pointer; }
