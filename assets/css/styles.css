@@ -178,3 +178,11 @@ td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; }
 @media (max-width: 640px){ .rev-grid { grid-template-columns: 1fr; } }
 .rev-grid .field { margin: 0; }
 .pill-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+
+/* Compact inline-editable cells in the import review table */
+.cellin { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); width: 100%; font-size: 13px; }
+.cellin:focus { outline: 2px solid var(--brand); border-color: transparent; }
+input.cellin.amt { text-align: right; font-variant-numeric: tabular-nums; }
+tr.revneeds { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.chip.warn { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
+table.data td { vertical-align: middle; }
