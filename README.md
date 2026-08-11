@@ -125,6 +125,35 @@ which is exactly why the review step exists. To add or tune a bank, edit
 
 ---
 
+## Install as an app (Android / desktop)
+
+The app is a PWA, so you can install it like a native app:
+
+- **Android (Chrome):** open the site → menu **⋮ → Add to Home screen / Install app**. It gets its own icon and opens full-screen.
+- **Desktop (Chrome/Edge):** an **Install** icon appears in the address bar.
+
+It also works offline for viewing (the app shell is cached); importing and syncing need a connection.
+
+## Sync across devices (Google Drive)
+
+Your data can sync between devices through a **private folder in your own Google
+Drive** (`appDataFolder`) that only this app can read — it never appears in your
+normal Drive and no third-party server is involved.
+
+- Uses the **same Google sign-in** as Gmail import, plus one extra scope
+  (`drive.appdata`).
+- **Connect** in Import or in **Settings → Sync across devices**. With
+  auto-sync on (default), changes upload a couple of seconds after you make
+  them, and connecting on another device pulls everything down.
+- Merge is per-record last-write-wins, with deletions tracked so they
+  propagate. Expenses plus your base currency, FX rates, and categories sync;
+  **PDF passwords and the Client ID stay on each device** and are never
+  uploaded.
+- Tap **Sync now** any time to force a sync.
+
+> Because Google sign-in tokens are short-lived, you may need to tap Connect
+> once per session on each device; after that it syncs automatically.
+
 ## Project layout
 
 ```
@@ -136,9 +165,14 @@ assets/js/
   db.js                    IndexedDB storage + settings
   currency.js              FX conversion + amount parsing
   gmail.js                 Google sign-in + Gmail read-only API
+  drive.js                 Private Drive appData file read/write (sync)
+  sync.js                  Cross-device merge (last-write-wins + tombstones)
   pdf.js                   PDF text extraction (wraps pdf.js)
   parsers.js               Statement PDF parsers → transactions
   dashboard.js             Aggregations + charts
+assets/icons/             App icons (192/512) for install
+manifest.webmanifest      PWA manifest (installable app)
+sw.js                     Service worker (offline shell)
 vendor/pdfjs/              Bundled pdf.js (no CDN needed)
 ```
 

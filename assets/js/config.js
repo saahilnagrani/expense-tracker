@@ -102,5 +102,7 @@ export function defaultSettings() {
     // Which sources are enabled for import (credit cards on by default).
     enabledSources: SOURCES.filter((s) => s.default).map((s) => s.bank),
     lookbackMonths: 12,
+    // Cross-device sync via the user's private Google Drive app-data folder.
+    autoSync: true,
   };
 }

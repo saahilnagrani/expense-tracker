@@ -5,7 +5,9 @@
 // origins include this site's origin. Scope: gmail.readonly.
 
 const GIS_SRC = "https://accounts.google.com/gsi/client";
-const SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+// gmail.readonly = read statements; drive.appdata = private per-user sync file
+// stored in a hidden Drive folder only this app can see (cross-device sync).
+const SCOPE = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.appdata";
 const API = "https://gmail.googleapis.com/gmail/v1/users/me";
 
 let _tokenClient = null;
@@ -30,6 +32,11 @@ function loadGis() {
 
 export function isSignedIn() {
   return !!_accessToken && Date.now() < _tokenExpiry - 5000;
+}
+
+// Current access token (for Drive REST calls in drive.js). Null if not signed in.
+export function getAccessToken() {
+  return isSignedIn() ? _accessToken : null;
 }
 
 // Interactive sign-in / token request. Must be triggered by a user click.

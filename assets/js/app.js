@@ -1,8 +1,9 @@
 // Main UI controller: routing, views, and wiring for the Expense Tracker.
 import {
   allExpenses, putExpense, putMany, deleteExpense, clearAll,
-  existingDedupeKeys, loadSettings, saveSettings, uid,
+  existingDedupeKeys, loadSettings, saveSettings, uid, recordDeletion,
 } from "./db.js";
+import { syncNow, markPrefsChanged, lastSyncedAt } from "./sync.js";
 import { SOURCES } from "./config.js";
 import { toBase, fmt, fmtBase } from "./currency.js";
 import * as GM from "./gmail.js";
@@ -30,6 +31,9 @@ async function boot() {
   $("#modalClose").addEventListener("click", closeModal);
   $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
   go(location.hash.replace("#", "") || "dashboard");
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  }
 }
 
 function go(view) {
@@ -43,6 +47,30 @@ function go(view) {
 
 function updateBasePill() {
   $("#basePill").textContent = "Base: " + settings.baseCurrency;
+}
+
+// ---- Google Drive sync helpers ----
+let syncTimer;
+function scheduleSync() {
+  if (!settings.autoSync || !GM.isSignedIn()) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => runSync(true), 2500);
+}
+
+async function runSync(silent) {
+  if (!GM.isSignedIn()) { if (!silent) toast("Connect your Google account first", "err"); return; }
+  try {
+    if (!silent) toast("Syncing…");
+    await syncNow();
+    expenses = await allExpenses();
+    settings = loadSettings();
+    updateBasePill();
+    const cur = location.hash.replace("#", "") || "dashboard";
+    if (!silent || cur === "dashboard" || cur === "expenses") go(cur);
+    if (!silent) toast("Synced ✓", "ok");
+  } catch (e) {
+    toast("Sync failed: " + e.message, "err");
+  }
 }
 
 // ---------- Dashboard ----------
@@ -159,12 +187,14 @@ function renderExpenses() {
   $("#expCsv").addEventListener("click", () => exportCsv(filtered));
   $$(".catsel").forEach((sel) => sel.addEventListener("change", async (e) => {
     const exp = expenses.find((x) => x.id === e.target.dataset.id);
-    if (exp) { exp.category = e.target.value; await putExpense(exp); toast("Category updated", "ok"); }
+    if (exp) { exp.category = e.target.value; exp.updatedAt = Date.now(); await putExpense(exp); scheduleSync(); toast("Category updated", "ok"); }
   }));
   $$(".del").forEach((b) => b.addEventListener("click", async () => {
     if (!confirm("Delete this transaction?")) return;
     await deleteExpense(b.dataset.id);
+    await recordDeletion(b.dataset.id);
     expenses = expenses.filter((x) => x.id !== b.dataset.id);
+    scheduleSync();
     renderExpenses();
   }));
   $$(".fsel").forEach((s) => s.style.cssText = "padding:9px 10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)");
@@ -228,11 +258,12 @@ async function saveManual() {
     amount: Math.abs(amount), currency: $("#aCur").value,
     category: $("#aCat").value || guessCategory(desc), card: $("#aCard").value.trim() || "Manual",
     kind, source: "manual", notes: $("#aNotes").value.trim(),
-    createdAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(), updatedAt: Date.now(),
   };
   e.dedupeKey = dedupeKey({ ...e, source: "manual" });
   await putExpense(e);
   expenses.unshift(e);
+  scheduleSync();
   toast("Saved ✓", "ok");
   renderAdd();
 }
@@ -273,8 +304,13 @@ function renderImport() {
   }));
   $("#lookback")?.addEventListener("change", (e) => { settings.lookbackMonths = +e.target.value; saveSettings(settings); });
   $("#connectBtn")?.addEventListener("click", async () => {
-    try { setLog("Opening Google sign-in…"); await GM.connect(settings.googleClientId); toast("Connected to Gmail ✓", "ok"); renderImport(); }
-    catch (e) { setLog(""); toast(e.message, "err"); }
+    try {
+      setLog("Opening Google sign-in…");
+      await GM.connect(settings.googleClientId);
+      toast("Connected ✓", "ok");
+      renderImport();
+      if (settings.autoSync) runSync(false); // pull any data synced from other devices
+    } catch (e) { setLog(""); toast(e.message, "err"); }
   });
   $("#disconnectBtn")?.addEventListener("click", () => { GM.disconnect(); renderImport(); });
   $("#fetchBtn")?.addEventListener("click", fetchAndParse);
@@ -407,7 +443,7 @@ async function saveReview(fresh) {
       category: r.category || guessCategory(r.description), card: r.card,
       kind: r.kind === "credit" ? "credit" : "expense",
       source: r.source, bank: r.bank, gmailMessageId: r.gmailMessageId,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(), updatedAt: Date.now(),
     };
     e.dedupeKey = dedupeKey(e);
     return e;
@@ -415,6 +451,7 @@ async function saveReview(fresh) {
 
   await putMany(toSave);
   expenses = await allExpenses();
+  scheduleSync();
   toast(`Imported ${toSave.length} transaction(s) ✓`, "ok");
   go("expenses");
 }
@@ -442,6 +479,19 @@ function renderSettings() {
             <input type="password" class="pwIn" data-bank="${s.bank}" value="${esc(settings.passwords[s.bank] || "")}" placeholder="${esc(s.passwordHint || "PDF password")}">
           </div>`).join("")}
       </div>
+    </div>
+
+    <div class="card mt">
+      <div class="section-title">Sync across devices (Google Drive)</div>
+      <p class="hint">Syncs your data through a private folder in your own Google Drive that only this app can read — the same expenses then appear on every device. Passwords and the Client ID stay on each device and are never uploaded.</p>
+      <div class="flex">
+        ${GM.isSignedIn()
+          ? `<span class="okbox" style="padding:6px 10px">Google account connected</span><button class="btn" id="syncNow">Sync now</button>`
+          : `<button class="btn" id="syncConnect" ${settings.googleClientId ? "" : "disabled"}>Connect Google account</button>`}
+        <label class="flex" style="gap:6px;cursor:pointer"><input type="checkbox" id="autoSync" ${settings.autoSync ? "checked" : ""}> Auto-sync on changes</label>
+      </div>
+      <div class="hint mt" id="syncStatus"></div>
+      ${!settings.googleClientId ? `<div class="hint mt">Add your Google Client ID above and press <b>Save settings</b> to enable syncing.</div>` : ""}
     </div>
 
     <div class="grid cols-2 mt">
@@ -474,19 +524,34 @@ function renderSettings() {
   $$(".catDel").forEach((b) => b.addEventListener("click", () => {
     settings.categories = settings.categories.filter((c) => c !== b.dataset.c); renderSettings();
   }));
+  $("#syncConnect")?.addEventListener("click", async () => {
+    try { await GM.connect(settings.googleClientId); await runSync(false); renderSettings(); }
+    catch (e) { toast(e.message, "err"); }
+  });
+  $("#syncNow")?.addEventListener("click", () => runSync(false));
+  $("#autoSync")?.addEventListener("change", (e) => {
+    settings.autoSync = e.target.checked; saveSettings(settings);
+    toast(settings.autoSync ? "Auto-sync on" : "Auto-sync off", "ok");
+  });
+  lastSyncedAt().then((t) => {
+    const el = $("#syncStatus");
+    if (el) el.textContent = t ? "Last synced " + new Date(t).toLocaleString() : "Not synced yet on this device.";
+  });
   $("#expJson").addEventListener("click", exportJson);
   $("#impJson").addEventListener("change", importJson);
   $("#wipe").addEventListener("click", async () => {
     if (!confirm("Delete ALL transactions? This cannot be undone.")) return;
     await clearAll(); expenses = []; toast("All data deleted", "ok"); go("dashboard");
   });
-  $("#saveSet").addEventListener("click", () => {
+  $("#saveSet").addEventListener("click", async () => {
     settings.baseCurrency = $("#setBase").value;
     settings.googleClientId = $("#setClient").value.trim();
     $$(".rateIn").forEach((el) => { settings.rates[el.dataset.cur] = parseFloat(el.value) || 0; });
     $$(".pwIn").forEach((el) => { settings.passwords[el.dataset.bank] = el.value; });
     saveSettings(settings);
+    await markPrefsChanged(); // base currency / rates / categories are synced prefs
     updateBasePill();
+    scheduleSync();
     toast("Settings saved ✓", "ok");
   });
 }
