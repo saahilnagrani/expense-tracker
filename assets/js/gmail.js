@@ -40,7 +40,9 @@ export function getAccessToken() {
 }
 
 // Interactive sign-in / token request. Must be triggered by a user click.
-export async function connect(clientId) {
+// `hint` (an email) preselects the account so multi-account users don't have
+// to pick every time.
+export async function connect(clientId, hint) {
   if (!clientId) throw new Error("Missing Google Client ID. Add it in Settings.");
   await loadGis();
   return new Promise((resolve, reject) => {
@@ -48,6 +50,7 @@ export async function connect(clientId) {
       _tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: SCOPE,
+        hint: hint || undefined,
         callback: (resp) => {
           if (resp.error) return reject(new Error(resp.error_description || resp.error));
           _accessToken = resp.access_token;
@@ -62,10 +65,15 @@ export async function connect(clientId) {
   });
 }
 
+// The connected account's email address (for storing as a future hint).
+export async function getProfileEmail() {
+  try { const d = await api("/profile"); return d.emailAddress || ""; } catch { return ""; }
+}
+
 // Try to restore a token silently on page load (no popup, no re-consent) —
 // works when the user has already granted access and has an active Google
 // session. Resolves true if a token was obtained, false otherwise.
-export async function silentConnect(clientId) {
+export async function silentConnect(clientId, hint) {
   if (!clientId) return false;
   try { await loadGis(); } catch { return false; }
   return new Promise((resolve) => {
@@ -75,6 +83,7 @@ export async function silentConnect(clientId) {
       _tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: SCOPE,
+        hint: hint || undefined,
         callback: (resp) => {
           if (resp && resp.access_token) {
             _accessToken = resp.access_token;

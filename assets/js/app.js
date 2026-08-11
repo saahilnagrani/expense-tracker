@@ -50,7 +50,7 @@ async function boot() {
   // Restore the Google connection silently after a refresh (no popup), then
   // pull any changes synced from other devices.
   if (settings.googleClientId) {
-    GM.silentConnect(settings.googleClientId).then((ok) => {
+    GM.silentConnect(settings.googleClientId, settings.googleEmail).then((ok) => {
       if (!ok) return;
       const cur = location.hash.replace("#", "") || "dashboard";
       if (cur === "settings" || cur === "import") go(cur);
@@ -135,6 +135,13 @@ function scheduleSync() {
   if (!settings.autoSync || !GM.isSignedIn()) return;
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => runSync(true), 2500);
+}
+
+async function rememberGoogleEmail() {
+  try {
+    const email = await GM.getProfileEmail();
+    if (email && email !== settings.googleEmail) { settings.googleEmail = email; saveSettings(settings); }
+  } catch {}
 }
 
 async function runSync(silent) {
@@ -460,7 +467,8 @@ function renderImport() {
   $("#connectBtn")?.addEventListener("click", async () => {
     try {
       setLog("Opening Google sign-in…");
-      await GM.connect(settings.googleClientId);
+      await GM.connect(settings.googleClientId, settings.googleEmail);
+      await rememberGoogleEmail();
       toast("Connected ✓", "ok");
       renderImport();
       if (settings.autoSync) runSync(false); // pull any data synced from other devices
@@ -776,7 +784,7 @@ function renderSettings() {
     settings.categories = settings.categories.filter((c) => c !== b.dataset.c); renderSettings();
   }));
   $("#syncConnect")?.addEventListener("click", async () => {
-    try { await GM.connect(settings.googleClientId); await runSync(false); renderSettings(); }
+    try { await GM.connect(settings.googleClientId, settings.googleEmail); await rememberGoogleEmail(); await runSync(false); renderSettings(); }
     catch (e) { toast(e.message, "err"); }
   });
   $("#syncNow")?.addEventListener("click", () => runSync(false));
