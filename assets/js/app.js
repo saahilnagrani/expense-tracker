@@ -466,7 +466,7 @@ async function fetchAndParse() {
 }
 
 let reviewRows = [];
-let revFilter = { q: "", source: "", needsOnly: false };
+let revFilter = { q: "", source: "", needsOnly: false, cat: "", merchant: "" };
 
 function renderReview(rows, problems) {
   const fresh = rows.filter((r) => !r._dup);
@@ -474,7 +474,7 @@ function renderReview(rows, problems) {
   // you consciously include them after checking.
   fresh.forEach((r) => { if (r._sel === undefined) r._sel = !r.needsReview; });
   reviewRows = fresh;
-  revFilter = { q: "", source: "", needsOnly: false };
+  revFilter = { q: "", source: "", needsOnly: false, cat: "", merchant: "" };
   const dupCount = rows.length - fresh.length;
   const area = $("#reviewArea");
   if (!rows.length) {
@@ -485,6 +485,13 @@ function renderReview(rows, problems) {
     return;
   }
   const sources = [...new Set(fresh.map((r) => r.card).filter(Boolean))].sort();
+  const facet = (fn) => {
+    const m = {};
+    for (const r of fresh) { const k = fn(r); m[k] = (m[k] || 0) + 1; }
+    return Object.entries(m).sort((a, b) => b[1] - a[1]);
+  };
+  const revCats = facet((r) => r.category || "Uncategorized");
+  const revMerch = facet((r) => r.description || "—");
   area.innerHTML = `<div class="card">
     <div class="flex">
       <div class="section-title" style="margin:0">Review imported transactions</div>
@@ -498,6 +505,8 @@ function renderReview(rows, problems) {
     <div class="flex mt">
       <input id="revSearch" placeholder="Search description / card…" style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)">
       <select id="revSource" class="fsel"><option value="">All sources</option>${sources.map((s) => `<option>${esc(s)}</option>`).join("")}</select>
+      <select id="revCat" class="fsel"><option value="">All categories</option>${revCats.map(([c, n]) => `<option value="${esc(c)}" ${revFilter.cat === c ? "selected" : ""}>${esc(c)} (${n})</option>`).join("")}</select>
+      <select id="revMerchant" class="fsel" style="max-width:240px"><option value="">All merchants</option>${revMerch.map(([m, n]) => `<option value="${esc(m)}" ${revFilter.merchant === m ? "selected" : ""}>${esc(m)} (${n})</option>`).join("")}</select>
       <label class="flex" style="gap:6px;cursor:pointer"><input type="checkbox" id="revNeedsOnly"> Needs review only</label>
       <span class="spacer"></span>
       <span class="hint" id="revCounts"></span>
@@ -516,6 +525,8 @@ function renderReview(rows, problems) {
   // .fsel styled via CSS
   $("#revSearch").addEventListener("input", (e) => { revFilter.q = e.target.value; renderRevBody(); });
   $("#revSource").addEventListener("change", (e) => { revFilter.source = e.target.value; renderRevBody(); });
+  $("#revCat").addEventListener("change", (e) => { revFilter.cat = e.target.value; renderRevBody(); });
+  $("#revMerchant").addEventListener("change", (e) => { revFilter.merchant = e.target.value; renderRevBody(); });
   $("#revNeedsOnly").addEventListener("change", (e) => { revFilter.needsOnly = e.target.checked; renderRevBody(); });
   $("#revAll").addEventListener("click", () => { filteredRev().forEach(({ r }) => (r._sel = true)); renderRevBody(); });
   $("#revNone").addEventListener("click", () => { filteredRev().forEach(({ r }) => (r._sel = false)); renderRevBody(); });
@@ -528,6 +539,8 @@ function filteredRev() {
   return reviewRows.map((r, i) => ({ r, i })).filter(({ r }) => {
     if (q && !(`${r.description} ${r.card}`.toLowerCase().includes(q))) return false;
     if (revFilter.source && r.card !== revFilter.source) return false;
+    if (revFilter.cat && (r.category || "Uncategorized") !== revFilter.cat) return false;
+    if (revFilter.merchant && (r.description || "—") !== revFilter.merchant) return false;
     if (revFilter.needsOnly && !r.needsReview) return false;
     return true;
   });
