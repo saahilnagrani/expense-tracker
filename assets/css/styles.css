@@ -133,6 +133,9 @@ td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; }
 .chip.spend-credit { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
 .chip.spend-warn { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
 .chip.spend-muted { background: color-mix(in srgb, var(--muted) 18%, transparent); color: var(--muted); }
+/* Sub-group heading inside the password sections */
+.pw-group-label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 4px 0 6px; }
+.pw-group-label.mt { margin-top: 16px; }
 
 .muted { color: var(--muted); }
 .right { text-align: right; }

@@ -26,6 +26,20 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 //  - every other credit (refunds, cashback, reversals, …) reduces spend
 // Refunds keep their merchant's category; only the sign differs.
 // Returns null when the currency has no FX rate.
+// Categories sorted A–Z for the assignment dropdowns and the Settings list.
+// (The Expenses/Import filter dropdowns stay ordered by frequency on purpose.)
+function sortedCats() {
+  return [...(settings.categories || [])].sort((a, b) => a.localeCompare(b));
+}
+
+// Render "my" PDF-password fields for a set of sources.
+function pwFields(list) {
+  return list.map((s) => `
+    <div class="field"><label>${esc(s.label)}</label>
+      <input type="password" class="pwIn" data-bank="${s.bank}" value="${esc(settings.passwords[s.bank] || "")}" placeholder="${esc(s.passwordHint || "PDF password")}">
+    </div>`).join("");
+}
+
 function spendBase(e) {
   const b = toBase(e.amount, e.currency, settings);
   if (b == null) return null;
@@ -353,7 +367,7 @@ function rowHtml(e) {
   const base = toBase(e.amount, e.currency, settings); // AED value for both debits & credits
   const cls = e.kind === "credit" ? "credit" : "debit";
   const st = spendStatus(e);
-  const catOpts = ["", ...settings.categories].map((c) =>
+  const catOpts = ["", ...sortedCats()].map((c) =>
     `<option value="${esc(c)}" ${e.category === c ? "selected" : ""}>${c || "—"}</option>`).join("");
   return `<tr>
     <td>${e.date}</td>
@@ -383,7 +397,7 @@ function renderAdd() {
         <div class="field" style="max-width:80px"><label>Day</label><input id="rcDay" type="number" min="1" max="31" value="1"></div>
       </div>
       <div class="row" style="align-items:flex-end">
-        <div class="field"><label>Category</label><select id="rcCat"><option value="">— auto —</option>${settings.categories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+        <div class="field"><label>Category</label><select id="rcCat"><option value="">— auto —</option>${sortedCats().map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
         <div class="field"><label>Paid via</label><input id="rcPaid" placeholder="Cash / Bank transfer"></div>
         <div class="field" style="max-width:150px"><label>Starting</label><input id="rcStart" type="month" value="${cur}"></div>
         <div class="field" style="max-width:150px"><label>Ending (optional)</label><input id="rcEnd" type="month"></div>
@@ -706,7 +720,7 @@ function updateRevCounts() {
 }
 
 function reviewRowHtml(r, i) {
-  const cats = ["", ...settings.categories].map((c) =>
+  const cats = ["", ...sortedCats()].map((c) =>
     `<option value="${esc(c)}" ${r.category === c ? "selected" : ""}>${c || "—"}</option>`).join("");
   return `<tr class="${r.needsReview ? "revneeds" : ""}">
     <td><input type="checkbox" class="revChk" data-i="${i}" ${r._sel ? "checked" : ""}></td>
@@ -762,10 +776,10 @@ function renderSettings() {
         <p class="hint">Needed to read statements from Gmail on a static site. Create a free <b>Web</b> OAuth Client ID in Google Cloud, enable the Gmail API, and add this site's URL as an authorized JavaScript origin. Full walkthrough in the README.</p>
         <div class="section-title mt">Statement PDF passwords</div>
         <p class="hint">Bank statement PDFs are encrypted. Passwords are stored only in this browser.</p>
-        ${SOURCES.filter((s) => s.kind === "statement").map((s) => `
-          <div class="field"><label>${esc(s.label)}</label>
-            <input type="password" class="pwIn" data-bank="${s.bank}" value="${esc(settings.passwords[s.bank] || "")}" placeholder="${esc(s.passwordHint || "PDF password")}">
-          </div>`).join("")}
+        <div class="pw-group-label">Credit cards</div>
+        ${pwFields(SOURCES.filter((s) => !s.spouseOnly && !s.acct))}
+        <div class="pw-group-label mt">Bank-account statements</div>
+        ${pwFields(SOURCES.filter((s) => !s.spouseOnly && s.acct))}
       </div>
     </div>
 
@@ -792,15 +806,15 @@ function renderSettings() {
           <div class="field"><label>Gmail label on their forwarded statements</label><input id="spLabel" value="${esc(settings.spouseLabel)}" placeholder="e.g. Harshi Forward"></div>
         </div>
         <div class="section-title mt">Their statement PDF passwords</div>
+        <div class="pw-group-label">Their credit cards</div>
         ${SOURCES.filter((s) => s.shared || s.spouseOnly).map((s) => `<div class="field"><label>${esc(s.label)} — ${esc(settings.spouseName || "their")} password</label><input type="password" class="spPw" data-bank="${s.bank}" value="${esc((settings.spousePasswords || {})[s.bank] || "")}" placeholder="${esc(s.passwordHint || "PDF password")}"></div>`).join("")}
-        <div class="hint">Their ENBD Etihad Guest and ENBD Noon cards can be added once I have those sender addresses.</div>
       </div>
     </div>
 
     <div class="grid cols-2 mt">
       <div class="card">
         <div class="section-title">Categories</div>
-        <div id="catList" class="flex">${settings.categories.map((c) => `<span class="chip cat">${esc(c)} <button class="icon-btn catDel" data-c="${esc(c)}" style="padding:0 4px">✕</button></span>`).join("")}</div>
+        <div id="catList" class="flex">${sortedCats().map((c) => `<span class="chip cat">${esc(c)} <button class="icon-btn catDel" data-c="${esc(c)}" style="padding:0 4px">✕</button></span>`).join("")}</div>
         <div class="flex mt"><input id="newCat" placeholder="New category" style="max-width:200px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2)"><button class="btn sm secondary" id="addCat">Add</button></div>
         <div class="flex mt" style="border-top:1px solid var(--border);padding-top:12px">
           <button class="btn sm secondary" id="recat">Re-categorize uncategorized</button>
