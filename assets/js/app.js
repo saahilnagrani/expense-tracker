@@ -512,6 +512,7 @@ async function fetchAndParse() {
 
         const rows = [];
         for (const att of pdfs) {
+          if (src.fileMatch && !new RegExp(src.fileMatch, "i").test(att.filename)) continue;
           try {
             const bytes = await GM.getAttachment(ids[i], att.attachmentId);
             const pw = settings.passwords[src.bank] || "";

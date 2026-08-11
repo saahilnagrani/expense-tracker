@@ -117,6 +117,10 @@ export const SOURCES = [
     passwordHint: "8 digits: your year of birth + last 4 digits of your registered mobile, e.g. 19804567." },
   { bank: "wio", label: "Wio Credit Card", kind: "statement", default: true,
     from: "wio.io", currency: "AED",
+    // Wio also emails transfer receipts & invoices as PDFs — restrict to the
+    // monthly "Credit Statement" emails (subject) and, as a safety net, only
+    // parse attachments whose filename contains "statement" (fileMatch).
+    query: "subject:statement", fileMatch: "statement",
     passwordHint: "Usually not password-protected — leave blank. If prompted, check the Wio app." },
   // --- Bank-account statements (off by default; enable if you want them) ---
   { bank: "axis-acct", label: "Axis Bank A/c Statement", kind: "statement", default: false,
