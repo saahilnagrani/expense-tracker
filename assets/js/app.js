@@ -197,7 +197,7 @@ function renderExpenses() {
     scheduleSync();
     renderExpenses();
   }));
-  $$(".fsel").forEach((s) => s.style.cssText = "padding:9px 10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)");
+  // .fsel styled via CSS
 }
 let _t;
 function debouncedExp() { clearTimeout(_t); _t = setTimeout(renderExpenses, 250); }
@@ -210,7 +210,7 @@ function rowHtml(e) {
   return `<tr>
     <td>${e.date}</td>
     <td>${esc(e.description)}${e.kind === "credit" ? ' <span class="chip src-alert">credit</span>' : ""}</td>
-    <td><select class="catsel" data-id="${e.id}" style="border:1px solid var(--border);border-radius:8px;background:var(--panel-2);padding:5px 8px">${catOpts}</select></td>
+    <td><select class="catsel" data-id="${e.id}">${catOpts}</select></td>
     <td>${esc(e.card || "—")} <span class="chip src-${e.source === "manual" ? "manual" : e.source === "alert" ? "alert" : "statement"}">${srcLabel(e.source)}</span></td>
     <td class="amount ${cls}">${e.kind === "credit" ? "+" : ""}${fmt(e.amount, e.currency)}</td>
     <td class="amount">${base == null ? '<span class="chip" title="No FX rate for ' + e.currency + '">no rate</span>' : fmtBase(base, settings)}</td>
@@ -425,7 +425,7 @@ function renderReview(rows, problems) {
     </div>
   </div>`;
 
-  $$(".fsel").forEach((s) => s.style.cssText = "padding:9px 10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)");
+  // .fsel styled via CSS
   $("#revSearch").addEventListener("input", (e) => { revFilter.q = e.target.value; renderRevBody(); });
   $("#revSource").addEventListener("change", (e) => { revFilter.source = e.target.value; renderRevBody(); });
   $("#revNeedsOnly").addEventListener("change", (e) => { revFilter.needsOnly = e.target.checked; renderRevBody(); });
