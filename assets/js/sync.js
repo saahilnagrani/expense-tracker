@@ -47,6 +47,7 @@ export async function syncNow() {
   const localPrefsAt = await getMeta("prefsUpdatedAt", 0);
   const localPrefs = {
     baseCurrency: settings.baseCurrency, rates: settings.rates, categories: settings.categories,
+    recurring: settings.recurring || [],
   };
   let prefs = localPrefs, prefsUpdatedAt = localPrefsAt;
   if ((remote.prefsUpdatedAt || 0) > localPrefsAt) {
@@ -63,6 +64,7 @@ export async function syncNow() {
     s.baseCurrency = prefs.baseCurrency || s.baseCurrency;
     s.rates = { ...s.rates, ...(prefs.rates || {}) };
     s.categories = prefs.categories && prefs.categories.length ? prefs.categories : s.categories;
+    if (prefs.recurring) s.recurring = prefs.recurring;
     saveSettings(s);
   }
   await setMeta("prefsUpdatedAt", prefsUpdatedAt);

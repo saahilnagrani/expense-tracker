@@ -25,6 +25,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 // ---------- boot ----------
 async function boot() {
   expenses = await allExpenses();
+  await materializeRecurring();
   updateBasePill();
   document.querySelectorAll(".tab").forEach((t) =>
     t.addEventListener("click", () => go(t.dataset.view)));
@@ -47,6 +48,49 @@ function go(view) {
 
 function updateBasePill() {
   $("#basePill").textContent = "Base: " + settings.baseCurrency;
+}
+
+// ---- Recurring monthly expenses ----
+// Materialize a real expense for every month from each template's start month
+// up to the current month. IDs are deterministic (recur_<tpl>_<YYYY-MM>) so
+// re-running or syncing across devices never creates duplicates.
+async function materializeRecurring() {
+  const list = settings.recurring || [];
+  if (!list.length) return;
+  const curMonth = new Date().toISOString().slice(0, 7);
+  const existing = new Set(
+    expenses.filter((e) => e.recurringId).map((e) => `${e.recurringId}|${e.date.slice(0, 7)}`)
+  );
+  const toCreate = [];
+  for (const t of list) {
+    if (t.active === false || !t.startMonth) continue;
+    let [y, m] = t.startMonth.split("-").map(Number);
+    let guard = 0;
+    while (guard++ < 600) {
+      const mk = `${y}-${String(m).padStart(2, "0")}`;
+      if (mk > curMonth || (t.endMonth && mk > t.endMonth)) break;
+      if (!existing.has(`${t.id}|${mk}`)) {
+        const dim = new Date(y, m, 0).getDate();
+        const day = Math.min(Math.max(1, t.dayOfMonth || 1), dim);
+        const e = {
+          id: `recur_${t.id}_${mk}`, date: `${mk}-${String(day).padStart(2, "0")}`,
+          description: t.description, amount: Math.abs(Number(t.amount) || 0),
+          currency: t.currency || settings.baseCurrency,
+          category: t.category || guessCategory(t.description) || "Other",
+          card: t.paidVia || "Recurring", kind: "expense", source: "recurring",
+          recurringId: t.id, createdAt: new Date().toISOString(), updatedAt: Date.now(),
+          dedupeKey: `recurring|${t.id}|${mk}`,
+        };
+        if (e.amount > 0) toCreate.push(e);
+      }
+      m++; if (m > 12) { m = 1; y++; }
+    }
+  }
+  if (toCreate.length) {
+    await putMany(toCreate);
+    expenses = await allExpenses();
+    scheduleSync();
+  }
 }
 
 // ---- Google Drive sync helpers ----
@@ -221,13 +265,13 @@ function rowHtml(e) {
     <td>${e.date}</td>
     <td>${esc(e.description)}${e.kind === "credit" ? ' <span class="chip src-alert">credit</span>' : ""}</td>
     <td><select class="catsel" data-id="${e.id}">${catOpts}</select></td>
-    <td>${esc(e.card || "—")} <span class="chip src-${e.source === "manual" ? "manual" : e.source === "alert" ? "alert" : "statement"}">${srcLabel(e.source)}</span></td>
+    <td>${esc(e.card || "—")} <span class="chip src-${e.source === "manual" ? "manual" : e.source === "recurring" ? "recurring" : e.source === "alert" ? "alert" : "statement"}">${srcLabel(e.source)}</span></td>
     <td class="amount ${cls}">${e.kind === "credit" ? "+" : ""}${fmt(e.amount, e.currency)}</td>
     <td class="amount">${base == null ? '<span class="chip" title="No FX rate for ' + e.currency + '">no rate</span>' : fmtBase(base, settings)}</td>
     <td class="right"><button class="icon-btn del" data-id="${e.id}" title="Delete">🗑</button></td>
   </tr>`;
 }
-function srcLabel(s) { return s === "manual" ? "manual" : s === "alert" ? "alert" : "statement"; }
+function srcLabel(s) { return s === "manual" ? "manual" : s === "recurring" ? "recurring" : s === "alert" ? "alert" : "statement"; }
 
 // ---------- Add expense ----------
 function renderAdd() {
@@ -248,11 +292,27 @@ function renderAdd() {
       <div class="row">
         <div class="field"><label>Type</label><select id="aKind"><option value="expense">Expense</option><option value="credit">Credit / refund</option></select></div>
       </div>
-      <div class="field"><label>Notes (optional)</label><input id="aNotes" placeholder=""></div>
+      <div class="field" style="margin-top:2px">
+        <label class="flex" style="gap:8px;cursor:pointer;font-weight:600;color:var(--text)"><input type="checkbox" id="aRepeat"> Repeat every month (fixed expense — rent, house help, cook…)</label>
+      </div>
+      <div id="aRepeatOpts" style="display:none">
+        <div class="row">
+          <div class="field" style="max-width:200px"><label>On day of month</label><input type="number" min="1" max="31" id="aDay" value="1"></div>
+        </div>
+        <div class="hint">Adds this expense for every month from the date above through this month, and keeps adding it automatically each new month. Use "Card / source" for how it's paid (e.g. Cash, Bank transfer).</div>
+      </div>
+      <div class="field mt"><label>Notes (optional)</label><input id="aNotes" placeholder=""></div>
       <div class="flex"><button class="btn" id="aSave">Save expense</button><span id="aMsg" class="hint"></span></div>
     </div>`;
   $("#aDesc").addEventListener("blur", () => {
     if (!$("#aCat").value) { const g = guessCategory($("#aDesc").value); if (g) $("#aCat").value = g; }
+  });
+  const syncDay = () => { const d = $("#aDate").value; if (d) $("#aDay").value = +d.slice(8, 10); };
+  syncDay();
+  $("#aDate").addEventListener("change", () => { if (!$("#aRepeat").checked) syncDay(); });
+  $("#aRepeat").addEventListener("change", (e) => {
+    $("#aRepeatOpts").style.display = e.target.checked ? "block" : "none";
+    $("#aSave").textContent = e.target.checked ? "Save recurring expense" : "Save expense";
   });
   $("#aSave").addEventListener("click", saveManual);
 }
@@ -262,6 +322,24 @@ async function saveManual() {
   const desc = $("#aDesc").value.trim();
   if (!isFinite(amount) || amount <= 0) return toast("Enter a valid amount", "err");
   if (!desc) return toast("Add a description", "err");
+
+  // Recurring monthly expense → save a template and materialize months.
+  if ($("#aRepeat")?.checked) {
+    const date = $("#aDate").value;
+    const tpl = {
+      id: uid(), description: desc, amount: Math.abs(amount), currency: $("#aCur").value,
+      category: $("#aCat").value || guessCategory(desc), paidVia: $("#aCard").value.trim() || "Cash",
+      dayOfMonth: Math.min(31, Math.max(1, parseInt($("#aDay").value, 10) || 1)),
+      startMonth: (date || new Date().toISOString().slice(0, 10)).slice(0, 7), active: true,
+    };
+    settings.recurring = [...(settings.recurring || []), tpl];
+    saveSettings(settings);
+    await markPrefsChanged();
+    await materializeRecurring();
+    toast("Recurring expense added ✓", "ok");
+    return go("expenses");
+  }
+
   const kind = $("#aKind").value;
   const e = {
     id: uid(), date: $("#aDate").value, description: desc,
@@ -561,6 +639,25 @@ function renderSettings() {
       ${!settings.googleClientId ? `<div class="hint mt">Add your Google Client ID above and press <b>Save settings</b> to enable syncing.</div>` : ""}
     </div>
 
+    <div class="card mt">
+      <div class="section-title">Fixed monthly expenses (not on a card)</div>
+      <p class="hint">Rent, house help, cook, or anything you pay in cash/bank every month — added automatically each month and back-filled to the start date. Create one from <b>Add expense</b> → tick “Repeat every month”.</p>
+      ${(settings.recurring || []).length ? `
+      <div class="table-wrap mt"><table class="data"><thead><tr>
+        <th>Description</th><th class="amount">Amount</th><th>Day</th><th>Category</th><th>Paid via</th><th>Since</th><th></th>
+      </tr></thead><tbody>
+        ${settings.recurring.map((t) => `<tr${t.active === false ? ' class="muted"' : ""}>
+          <td>${esc(t.description)}</td>
+          <td class="amount">${fmt(t.amount, t.currency)}</td>
+          <td>${t.dayOfMonth || 1}</td>
+          <td>${esc(t.category || "—")}</td>
+          <td>${esc(t.paidVia || "—")}</td>
+          <td class="hint">${esc(t.startMonth || "")}${t.active === false ? " · paused" : ""}</td>
+          <td class="right"><button class="btn sm secondary recToggle" data-id="${t.id}">${t.active === false ? "Resume" : "Pause"}</button> <button class="icon-btn recDel" data-id="${t.id}" title="Delete">🗑</button></td>
+        </tr>`).join("")}
+      </tbody></table></div>` : `<div class="hint mt">None yet.</div>`}
+    </div>
+
     <div class="grid cols-2 mt">
       <div class="card">
         <div class="section-title">Categories</div>
@@ -604,6 +701,23 @@ function renderSettings() {
     const el = $("#syncStatus");
     if (el) el.textContent = t ? "Last synced " + new Date(t).toLocaleString() : "Not synced yet on this device.";
   });
+  $$(".recToggle").forEach((b) => b.addEventListener("click", async () => {
+    const t = (settings.recurring || []).find((x) => x.id === b.dataset.id);
+    if (!t) return;
+    t.active = t.active === false;
+    saveSettings(settings); await markPrefsChanged();
+    await materializeRecurring(); scheduleSync(); renderSettings();
+  }));
+  $$(".recDel").forEach((b) => b.addEventListener("click", async () => {
+    const t = (settings.recurring || []).find((x) => x.id === b.dataset.id);
+    if (!t) return;
+    const own = expenses.filter((e) => e.recurringId === t.id);
+    if (!confirm(`Delete recurring "${t.description}" and its ${own.length} generated entr${own.length === 1 ? "y" : "ies"}?`)) return;
+    settings.recurring = (settings.recurring || []).filter((x) => x.id !== t.id);
+    saveSettings(settings); await markPrefsChanged();
+    for (const e of own) { await deleteExpense(e.id); await recordDeletion(e.id); }
+    expenses = await allExpenses(); scheduleSync(); renderSettings();
+  }));
   $("#expJson").addEventListener("click", exportJson);
   $("#impJson").addEventListener("change", importJson);
   $("#wipe").addEventListener("click", async () => {

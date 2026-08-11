@@ -148,5 +148,9 @@ export function defaultSettings() {
     lookbackMonths: 12,
     // Cross-device sync via the user's private Google Drive app-data folder.
     autoSync: true,
+    // Fixed monthly expenses not paid by card (rent, house help, cook, …).
+    // Each: { id, description, amount, currency, category, paidVia,
+    //         dayOfMonth, startMonth "YYYY-MM", endMonth?, active }
+    recurring: [],
   };
 }

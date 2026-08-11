@@ -127,6 +127,7 @@ td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; }
 .chip.src-manual { background: color-mix(in srgb, var(--muted) 18%, transparent); }
 .chip.src-statement { background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); }
 .chip.src-alert { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+.chip.src-recurring { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
 
 .muted { color: var(--muted); }
 .right { text-align: right; }
