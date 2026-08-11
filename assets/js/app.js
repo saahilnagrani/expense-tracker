@@ -699,7 +699,7 @@ function reviewRowHtml(r, i) {
     <td><input class="cellin" data-i="${i}" data-f="description" value="${esc(r.description)}" style="min-width:200px"></td>
     <td class="amount"><input type="number" step="0.01" class="cellin amt" data-i="${i}" data-f="amount" value="${r.amount}" style="width:96px"></td>
     <td>${esc(r.currency || "?")}</td>
-    <td><select class="cellin" data-i="${i}" data-f="kind"><option value="expense" ${r.kind !== "credit" ? "selected" : ""}>Expense</option><option value="credit" ${r.kind === "credit" ? "selected" : ""}>Credit</option></select></td>
+    <td><select class="cellin" data-i="${i}" data-f="kind" style="min-width:104px"><option value="expense" ${r.kind !== "credit" ? "selected" : ""}>Expense</option><option value="credit" ${r.kind === "credit" ? "selected" : ""}>Credit</option></select></td>
     <td><select class="cellin" data-i="${i}" data-f="category">${cats}</select></td>
     <td class="hint" style="white-space:nowrap">${esc(r.card || "")}</td>
     <td>${r.needsReview ? `<span class="chip warn" title="${esc(r.reviewReason || "Check this row")}">review</span>` : `<span class="hint">ok</span>`}</td>
