@@ -4,12 +4,12 @@
 // Google API / sign-in requests are same-origin? No — they are cross-origin and
 // pass straight through untouched.
 
-const CACHE = "et-cache-v4";
+const CACHE = "et-cache-v5";
 const CORE = [
   "./",
   "./index.html",
-  "./assets/css/styles.css?v=4",
-  "./assets/js/app.js?v=4",
+  "./assets/css/styles.css?v=5",
+  "./assets/js/app.js?v=5",
   "./manifest.webmanifest",
   "./assets/icons/icon-192.png",
   "./assets/icons/icon-512.png",
@@ -36,6 +36,16 @@ self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET") return;
   if (new URL(req.url).origin !== self.location.origin) return; // let Google APIs pass through
+
+  // Page navigations: network-first, fall back to the cached shell offline.
+  if (req.mode === "navigate") {
+    e.respondWith(fetch(req).catch(() => caches.match("./index.html")));
+    return;
+  }
+
+  // Assets (JS/CSS/icons): network-first, then cache. IMPORTANT: on a miss,
+  // return the cached asset if present but NEVER the HTML shell — returning
+  // index.html for a .js/.css request corrupts it and blanks the app.
   e.respondWith(
     fetch(req)
       .then((res) => {
@@ -43,6 +53,6 @@ self.addEventListener("fetch", (e) => {
         caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
         return res;
       })
-      .catch(() => caches.match(req).then((m) => m || caches.match("./index.html")))
+      .catch(() => caches.match(req))
   );
 });
