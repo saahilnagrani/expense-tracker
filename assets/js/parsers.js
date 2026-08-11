@@ -81,7 +81,7 @@ export function parseStatementLines(lines, opts = {}) {
     const amount = parseFloat(mm[1].replace(/,/g, ""));
     if (!isFinite(amount) || amount === 0) continue;
     const isCredit = /CR/i.test(mm[3] || "") || amount < 0 ||
-      /payment received|thank you|refund|reversal|cashback/i.test(desc);
+      /payment received|thank ?you|refund|reversal|cash\s?-?back|reward\s?redemption/i.test(desc);
 
     // Lines that are more likely statement summaries than real transactions.
     const looksNonTxn = /\b(balance|opening|closing|total|sub-?total|available|credit limit|minimum (amount )?due|amount due|payment due|previous|carried forward|brought forward|finance charge)\b/i.test(desc);
