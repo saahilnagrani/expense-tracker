@@ -677,6 +677,10 @@ function renderSettings() {
         <div class="section-title">Categories</div>
         <div id="catList" class="flex">${settings.categories.map((c) => `<span class="chip cat">${esc(c)} <button class="icon-btn catDel" data-c="${esc(c)}" style="padding:0 4px">✕</button></span>`).join("")}</div>
         <div class="flex mt"><input id="newCat" placeholder="New category" style="max-width:200px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2)"><button class="btn sm secondary" id="addCat">Add</button></div>
+        <div class="flex mt" style="border-top:1px solid var(--border);padding-top:12px">
+          <button class="btn sm secondary" id="recat">Re-categorize uncategorized</button>
+          <span class="hint">${expenses.filter((e) => !e.category).length} uncategorized · applies the current rules to blank categories only</span>
+        </div>
       </div>
       <div class="card">
         <div class="section-title">Data</div>
@@ -698,6 +702,18 @@ function renderSettings() {
   $("#addCat").addEventListener("click", () => {
     const c = $("#newCat").value.trim();
     if (c && !settings.categories.includes(c)) { settings.categories.push(c); renderSettings(); }
+  });
+  $("#recat")?.addEventListener("click", async () => {
+    const updated = [];
+    for (const e of expenses) {
+      if (!e.category) {
+        const g = guessCategory(e.description);
+        if (g) { e.category = g; e.updatedAt = Date.now(); updated.push(e); }
+      }
+    }
+    if (updated.length) { await putMany(updated); expenses = await allExpenses(); scheduleSync(); }
+    toast(`Re-categorized ${updated.length} transaction(s)`, updated.length ? "ok" : "");
+    renderSettings();
   });
   $$(".catDel").forEach((b) => b.addEventListener("click", () => {
     settings.categories = settings.categories.filter((c) => c !== b.dataset.c); renderSettings();
