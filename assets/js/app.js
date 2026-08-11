@@ -29,7 +29,10 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 function spendBase(e) {
   const b = toBase(e.amount, e.currency, settings);
   if (b == null) return null;
-  if (e.kind === "credit") return e.category === "Card Payment" ? 0 : -b;
+  // Card bill payments / repayments never count as spend, in either direction
+  // (e.g. paying another card via Wio just settles a bill already counted).
+  if (e.category === "Card Payment") return 0;
+  if (e.kind === "credit") return -b;
   return b;
 }
 
@@ -527,7 +530,7 @@ async function fetchAndParse() {
           r.source = src.kind;
           r.bank = src.bank;
           r.gmailMessageId = ids[i];
-          r.category = guessCategory(r.description);
+          r.category = r.category || guessCategory(r.description);
           r.dedupeKey = dedupeKey({ ...r, source: src.kind });
           r._dup = existing.has(r.dedupeKey);
         }
