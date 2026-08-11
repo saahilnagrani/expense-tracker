@@ -24,33 +24,74 @@ export const DEFAULT_RATES_IN_AED = {
 
 export const DEFAULT_CATEGORIES = [
   "Groceries",
+  "Food Delivery",
   "Food & Dining",
   "Shopping",
   "Transport",
+  "Travel",
   "Bills & Utilities",
   "Subscriptions",
-  "Travel",
+  "Housing",
   "Health",
+  "Beauty",
   "Entertainment",
   "Cash & Transfers",
+  "Card Payment",
+  "Cashback",
   "Fees & Interest",
   "Income / Credit",
   "Other",
 ];
 
-// Simple keyword → category guesses used when importing. First match wins.
+// Keyword → category guesses used when importing. FIRST MATCH WINS, so order
+// matters: put specific merchants above the generic fallbacks (e.g. "Careem
+// Food" → Food Delivery must come before the generic "careem" → Transport).
 export const CATEGORY_RULES = [
-  [/netflix|spotify|prime|youtube|hotstar|disney|icloud|google one|openai|anthropic|claude|chatgpt|adobe|notion|canva/i, "Subscriptions"],
-  [/uber|careem|ola|lyft|rta|metro|taxi|fuel|petrol|adnoc|enoc|shell/i, "Transport"],
-  [/emirates|etihad|air ?india|indigo|flight|hotel|booking\.com|airbnb|makemytrip|kiwi/i, "Travel"],
-  [/lulu|carrefour|spinneys|grocer|bigbasket|blinkit|zepto|instashop|supermarket|mart/i, "Groceries"],
-  [/talabat|zomato|swiggy|deliveroo|mcdonald|kfc|starbucks|restaurant|cafe|district|dining/i, "Food & Dining"],
+  // Card bill payments & cashback (also treated as credits, kept out of spend)
+  [/payment received|thank ?you/i, "Card Payment"],
+  [/cashback/i, "Cashback"],
+
+  // Food delivery (before Groceries / generic Careem, Noon)
+  [/careem food|talabat|noon food|keeta|deliveroo|hardees?/i, "Food Delivery"],
+
+  // Groceries (specific merchants before generic Amazon/Noon → Shopping)
+  [/amazon ?now|amazonufg|maf hyper|waitrose|careem deliveries|careem quik|al ain food|noon minutes|%\s?arabica|lulu|carrefour|spinneys|grocer|bigbasket|blinkit|zepto|instashop|supermarket/i, "Groceries"],
+
+  // Restaurants / dining
+  [/mcdonald|quick snack selling|royal catering|caribou coffee|kfc|starbucks|restaurant|\bcafe\b|dining/i, "Food & Dining"],
+
+  // Transport
+  [/yango|parkonic|zofeur|dubai smart government|\brta\b|uber|\bcareem\b|\bola\b|metro|taxi|fuel|petrol|adnoc|enoc|salik/i, "Transport"],
+
+  // Travel
+  [/\bvfs\b|emirates|etihad|air ?india|indigo|flight|hotel|booking\.com|airbnb|makemytrip|kiwi/i, "Travel"],
+
+  // Bills & utilities
+  [/e&\s?digital|etisalat|tasleem|addc|auh gas|\bdu bill\b|\bdewa\b|electricity|water|internet|mobile|recharge/i, "Bills & Utilities"],
+
+  // Subscriptions
+  [/linkedin|apple\.com\/bill|itunes|netflix|spotify|prime|youtube|hotstar|disney|icloud|google one|openai|anthropic|claude|chatgpt|adobe|notion|canva/i, "Subscriptions"],
+
+  // Beauty
+  [/urbanclap|urban company|\bsalon\b|\bspa\b|beauty/i, "Beauty"],
+
+  // Housing / rent
+  [/asteco|property mgt|property management|\brent\b|ejari/i, "Housing"],
+
+  // Health
+  [/mede?ror|medeor|pharmacy|hospital|clinic|aster|medcare|apollo|\bhealth\b|dr\.?\s/i, "Health"],
+
+  // Shopping (generic, after specific Amazon/Noon groceries)
   [/amazon|noon|flipkart|myntra|ikea|namshi|ajio|store|shop/i, "Shopping"],
-  [/du |etisalat| dewa|jio|airtel|vodafone|electricity|water|internet|mobile|recharge|myjio/i, "Bills & Utilities"],
-  [/pharmacy|hospital|clinic|aster|medcare|apollo|health|dr\.?\s/i, "Health"],
-  [/vox|cinema|pvr|bookmyshow|game|steam|playstation|entertainment/i, "Entertainment"],
-  [/atm|cash|neft|imps|upi|transfer|withdrawal/i, "Cash & Transfers"],
-  [/interest|finance charge|late fee|annual fee|vat|markup|fee/i, "Fees & Interest"],
+
+  // Entertainment
+  [/vox|cinema|pvr|bookmyshow|game|steam|playstation/i, "Entertainment"],
+
+  // Fees (precise — avoid bare "fee" which would catch "coffee")
+  [/interest|finance charge|late fee|annual fee|foreign transaction fee|service fee|markup|\bvat\b/i, "Fees & Interest"],
+
+  // Cash / transfers
+  [/\batm\b|cash withdrawal|neft|imps|\bupi\b|transfer/i, "Cash & Transfers"],
 ];
 
 // Known senders that email statements as PDF attachments. `kind` is always
