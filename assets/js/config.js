@@ -71,6 +71,9 @@ export const SOURCES = [
   { bank: "fab", label: "FAB Credit Card", kind: "statement", default: true,
     from: "estatement@bankfab.com", currency: "AED",
     passwordHint: "8 digits: your year of birth + last 4 digits of your registered mobile, e.g. 19804567." },
+  { bank: "wio", label: "Wio Credit Card", kind: "statement", default: true,
+    from: "wio.io", currency: "AED",
+    passwordHint: "Usually not password-protected — leave blank. If prompted, check the Wio app." },
   // --- Bank-account statements (off by default; enable if you want them) ---
   { bank: "axis-acct", label: "Axis Bank A/c Statement", kind: "statement", default: false,
     from: "statements@axis.bank.in", currency: "INR",
