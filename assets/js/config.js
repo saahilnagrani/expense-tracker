@@ -149,6 +149,11 @@ export const SOURCES = [
   { bank: "enbd-etihad", label: "ENBD Etihad Guest Visa", kind: "statement", default: true, shared: true,
     from: "statement@emiratesnbd.com", currency: "AED", query: 'subject:"etihad guest"',
     passwordHint: "Check the Emirates NBD email for the password format." },
+  // Spouse-only: wife's (now cancelled) Commercial Bank of Dubai card. Her
+  // statements arrive under the household Gmail label.
+  { bank: "cbd-h", label: "CBD Credit Card", kind: "statement", default: true, spouseOnly: true,
+    from: "estatements@cbdstatements.ae", currency: "AED",
+    passwordHint: "Same format as the Emirates NBD statement password." },
   { bank: "boi-stmt", label: "Bank of India Statement", kind: "statement", default: false,
     from: "noreply-estatement@alerts.bankofindia.bank.in", currency: "INR",
     passwordHint: "Check the Bank of India email for the password format." },
