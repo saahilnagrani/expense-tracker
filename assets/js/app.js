@@ -306,9 +306,9 @@ function renderExpenses() {
         <table class="data">
           <thead><tr>
             <th>Date</th><th>Description</th><th>Category</th><th>Card / Source</th>
-            <th class="amount">Amount</th><th class="amount">In ${settings.baseCurrency}</th><th></th>
+            <th class="amount">Amount</th><th class="amount">In ${settings.baseCurrency}</th><th>Spend</th><th></th>
           </tr></thead>
-          <tbody>${filtered.map(rowHtml).join("") || `<tr><td colspan="7" class="hint" style="padding:24px">No matching transactions.</td></tr>`}</tbody>
+          <tbody>${filtered.map(rowHtml).join("") || `<tr><td colspan="8" class="hint" style="padding:24px">No matching transactions.</td></tr>`}</tbody>
         </table>
       </div>
     </div>`;
@@ -336,9 +336,23 @@ function renderExpenses() {
 let _t;
 function debouncedExp() { clearTimeout(_t); _t = setTimeout(renderExpenses, 250); }
 
+// How a row affects the spend total, mirroring spendBase() exactly, so the
+// user can see at a glance what's counted and what isn't.
+function spendStatus(e) {
+  const base = toBase(e.amount, e.currency, settings);
+  if (e.category === "Card Payment")
+    return { txt: "excluded", cls: "muted", title: "Card-bill payment — never counted toward spend" };
+  if (base == null)
+    return { txt: "skipped", cls: "warn", title: `No FX rate for ${e.currency} — not counted. Add a rate in Settings.` };
+  if (e.kind === "credit")
+    return { txt: "reduces −", cls: "credit", title: "Credit (refund/cashback) — reduces spend, kept in its category" };
+  return { txt: "counts +", cls: "debit", title: "Counted toward spend" };
+}
+
 function rowHtml(e) {
   const base = toBase(e.amount, e.currency, settings); // AED value for both debits & credits
   const cls = e.kind === "credit" ? "credit" : "debit";
+  const st = spendStatus(e);
   const catOpts = ["", ...settings.categories].map((c) =>
     `<option value="${esc(c)}" ${e.category === c ? "selected" : ""}>${c || "—"}</option>`).join("");
   return `<tr>
@@ -348,6 +362,7 @@ function rowHtml(e) {
     <td>${esc(e.card || "—")} <span class="chip src-${e.source === "manual" ? "manual" : e.source === "recurring" ? "recurring" : e.source === "alert" ? "alert" : "statement"}">${srcLabel(e.source)}</span></td>
     <td class="amount ${cls}">${e.kind === "credit" ? "+" : ""}${fmt(e.amount, e.currency)}</td>
     <td class="amount ${cls}">${base == null ? '<span class="chip" title="No FX rate for ' + e.currency + '">no rate</span>' : (e.kind === "credit" ? "+" : "") + fmtBase(base, settings)}</td>
+    <td><span class="chip spend-${st.cls}" title="${esc(st.title)}">${st.txt}</span></td>
     <td class="right"><button class="icon-btn del" data-id="${e.id}" title="Delete">🗑</button></td>
   </tr>`;
 }
