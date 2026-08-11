@@ -126,14 +126,15 @@ export const SOURCES = [
     // parse attachments whose filename contains "statement" (fileMatch).
     query: "subject:statement", fileMatch: "statement",
     passwordHint: "Usually not password-protected — leave blank. If prompted, check the Wio app." },
-  // --- Bank-account statements (off by default; enable if you want them) ---
-  { bank: "axis-acct", label: "Axis Bank A/c Statement", kind: "statement", default: false,
+  // --- Bank-account statements (off by default; enable if you want them).
+  //     `acct: true` groups them separately from credit cards in Settings. ---
+  { bank: "axis-acct", label: "Axis Bank A/c Statement", kind: "statement", default: false, acct: true,
     from: "statements@axis.bank.in", currency: "INR",
     passwordHint: "4 letters of name (CAPS) + 9-digit Customer ID, or + 4-digit DOB (DDMM)." },
-  { bank: "hdfc-stmt", label: "HDFC SmartStatement", kind: "statement", default: false,
+  { bank: "hdfc-stmt", label: "HDFC SmartStatement", kind: "statement", default: false, acct: true,
     from: "hdfcbanksmartstatement@hdfcbank.bank.in", currency: "INR",
     passwordHint: "Check the HDFC email for the exact password format." },
-  { bank: "enbd", label: "Emirates NBD A/c", kind: "statement", default: false,
+  { bank: "enbd", label: "Emirates NBD A/c", kind: "statement", default: false, acct: true,
     from: "statement@emiratesnbd.com", currency: "AED",
     passwordHint: "Check the Emirates NBD email for the password format." },
   // ENBD credit cards come from the same sender as the account statement,
@@ -154,7 +155,7 @@ export const SOURCES = [
   { bank: "cbd-h", label: "CBD Credit Card", kind: "statement", default: true, spouseOnly: true,
     from: "estatements@cbdstatements.ae", currency: "AED",
     passwordHint: "Same format as the Emirates NBD statement password." },
-  { bank: "boi-stmt", label: "Bank of India Statement", kind: "statement", default: false,
+  { bank: "boi-stmt", label: "Bank of India Statement", kind: "statement", default: false, acct: true,
     from: "noreply-estatement@alerts.bankofindia.bank.in", currency: "INR",
     passwordHint: "Check the Bank of India email for the password format." },
 ];
