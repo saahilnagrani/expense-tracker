@@ -133,9 +133,23 @@ td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; }
 .chip.spend-credit { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
 .chip.spend-warn { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
 .chip.spend-muted { background: color-mix(in srgb, var(--muted) 18%, transparent); color: var(--muted); }
-/* Sub-group heading inside the password sections */
-.pw-group-label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 4px 0 6px; }
-.pw-group-label.mt { margin-top: 16px; }
+/* Group heading for the import source chips */
+.pill-group-label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 4px 0 8px; }
+.pill-group-label.mt { margin-top: 16px; }
+.chip-sub { color: var(--muted); font-weight: 500; font-size: 11px; }
+
+/* Unified statement-password table (card/account × your / their password) */
+table.pw-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+table.pw-table th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; text-align: left; padding: 6px 10px; font-weight: 700; }
+table.pw-table th:nth-child(2), table.pw-table th:nth-child(3) { width: 32%; }
+table.pw-table td { padding: 6px 10px; vertical-align: middle; border-top: 1px solid var(--border); }
+table.pw-table td:first-child { font-weight: 600; color: var(--text); font-size: 14px; }
+table.pw-table tr.grouprow td { border-top: none; padding: 16px 10px 4px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+table.pw-table tr.grouprow:first-child td { padding-top: 4px; }
+.pw-table input { width: 100%; }
+.pw-table .pw-na { display: block; text-align: center; color: var(--muted); opacity: .5; }
+.pw-table.hide-spouse .spcol { display: none; }
+.pw-table.hide-spouse .sponly-row { display: none; }
 
 .muted { color: var(--muted); }
 .right { text-align: right; }

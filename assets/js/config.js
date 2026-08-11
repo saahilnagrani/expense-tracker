@@ -151,9 +151,11 @@ export const SOURCES = [
     from: "statement@emiratesnbd.com", currency: "AED", query: 'subject:"etihad guest"',
     passwordHint: "Check the Emirates NBD email for the password format." },
   // Spouse-only: wife's (now cancelled) Commercial Bank of Dubai card. Her
-  // statements arrive under the household Gmail label.
+  // statements arrive under the household Gmail label. CBD emails both credit-
+  // card AND bank-account statements from this address, so restrict to the
+  // credit-card ones by subject.
   { bank: "cbd-h", label: "CBD Credit Card", kind: "statement", default: true, spouseOnly: true,
-    from: "estatements@cbdstatements.ae", currency: "AED",
+    from: "estatements@cbdstatements.ae", currency: "AED", query: 'subject:"credit card"',
     passwordHint: "Same format as the Emirates NBD statement password." },
   { bank: "boi-stmt", label: "Bank of India Statement", kind: "statement", default: false, acct: true,
     from: "noreply-estatement@alerts.bankofindia.bank.in", currency: "INR",
