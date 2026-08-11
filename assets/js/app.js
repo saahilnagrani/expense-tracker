@@ -35,6 +35,16 @@ async function boot() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
+  // Restore the Google connection silently after a refresh (no popup), then
+  // pull any changes synced from other devices.
+  if (settings.googleClientId) {
+    GM.silentConnect(settings.googleClientId).then((ok) => {
+      if (!ok) return;
+      const cur = location.hash.replace("#", "") || "dashboard";
+      if (cur === "settings" || cur === "import") go(cur);
+      runSync(true);
+    }).catch(() => {});
+  }
 }
 
 function go(view) {
@@ -654,7 +664,19 @@ function renderSettings() {
 
     <div class="card mt">
       <div class="section-title">Fixed monthly expenses (not on a card)</div>
-      <p class="hint">Rent, house help, cook, or anything you pay in cash/bank every month — added automatically each month and back-filled to the start date. Create one from <b>Add expense</b> → tick “Repeat every month”.</p>
+      <p class="hint">Rent, house help, cook, or anything you pay in cash/bank every month — added automatically each month and back-filled from the start month.</p>
+      <div class="row mt" style="align-items:flex-end">
+        <div class="field" style="flex:2;min-width:150px"><label>Description</label><input id="rcDesc" placeholder="e.g. Apartment rent"></div>
+        <div class="field" style="max-width:120px"><label>Amount</label><input id="rcAmount" type="number" step="0.01" min="0" placeholder="0.00"></div>
+        <div class="field" style="max-width:100px"><label>Currency</label><select id="rcCur">${currencyOptions(settings.baseCurrency)}</select></div>
+        <div class="field" style="max-width:80px"><label>Day</label><input id="rcDay" type="number" min="1" max="31" value="1"></div>
+      </div>
+      <div class="row" style="align-items:flex-end">
+        <div class="field"><label>Category</label><select id="rcCat"><option value="">— auto —</option>${settings.categories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+        <div class="field"><label>Paid via</label><input id="rcPaid" placeholder="Cash / Bank transfer"></div>
+        <div class="field" style="max-width:160px"><label>Starting</label><input id="rcStart" type="month" value="${new Date().toISOString().slice(0, 7)}"></div>
+        <div class="field" style="max-width:140px"><label>&nbsp;</label><button class="btn" id="rcAdd">Add monthly</button></div>
+      </div>
       ${(settings.recurring || []).length ? `
       <div class="table-wrap mt"><table class="data"><thead><tr>
         <th>Description</th><th class="amount">Amount</th><th>Day</th><th>Category</th><th>Paid via</th><th>Since</th><th></th>
@@ -713,6 +735,23 @@ function renderSettings() {
   lastSyncedAt().then((t) => {
     const el = $("#syncStatus");
     if (el) el.textContent = t ? "Last synced " + new Date(t).toLocaleString() : "Not synced yet on this device.";
+  });
+  $("#rcAdd")?.addEventListener("click", async () => {
+    const desc = $("#rcDesc").value.trim();
+    const amount = parseFloat($("#rcAmount").value);
+    if (!desc) return toast("Add a description", "err");
+    if (!isFinite(amount) || amount <= 0) return toast("Enter a valid amount", "err");
+    const tpl = {
+      id: uid(), description: desc, amount: Math.abs(amount), currency: $("#rcCur").value,
+      category: $("#rcCat").value || guessCategory(desc), paidVia: $("#rcPaid").value.trim() || "Cash",
+      dayOfMonth: Math.min(31, Math.max(1, parseInt($("#rcDay").value, 10) || 1)),
+      startMonth: $("#rcStart").value || new Date().toISOString().slice(0, 7), active: true,
+    };
+    settings.recurring = [...(settings.recurring || []), tpl];
+    saveSettings(settings); await markPrefsChanged();
+    await materializeRecurring(); scheduleSync();
+    toast("Monthly expense added ✓", "ok");
+    renderSettings();
   });
   $$(".recToggle").forEach((b) => b.addEventListener("click", async () => {
     const t = (settings.recurring || []).find((x) => x.id === b.dataset.id);

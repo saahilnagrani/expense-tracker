@@ -62,6 +62,34 @@ export async function connect(clientId) {
   });
 }
 
+// Try to restore a token silently on page load (no popup, no re-consent) —
+// works when the user has already granted access and has an active Google
+// session. Resolves true if a token was obtained, false otherwise.
+export async function silentConnect(clientId) {
+  if (!clientId) return false;
+  try { await loadGis(); } catch { return false; }
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    try {
+      _tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: SCOPE,
+        callback: (resp) => {
+          if (resp && resp.access_token) {
+            _accessToken = resp.access_token;
+            _tokenExpiry = Date.now() + (resp.expires_in ? resp.expires_in * 1000 : 3600 * 1000);
+            finish(true);
+          } else finish(false);
+        },
+        error_callback: () => finish(false),
+      });
+      _tokenClient.requestAccessToken({ prompt: "" }); // silent
+      setTimeout(() => finish(false), 6000); // give up quietly
+    } catch { finish(false); }
+  });
+}
+
 export function disconnect() {
   if (_accessToken && window.google) {
     try { google.accounts.oauth2.revoke(_accessToken, () => {}); } catch {}
