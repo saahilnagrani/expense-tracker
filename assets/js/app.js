@@ -319,7 +319,7 @@ let _t;
 function debouncedExp() { clearTimeout(_t); _t = setTimeout(renderExpenses, 250); }
 
 function rowHtml(e) {
-  const base = e.kind === "credit" ? null : toBase(e.amount, e.currency, settings);
+  const base = toBase(e.amount, e.currency, settings); // AED value for both debits & credits
   const cls = e.kind === "credit" ? "credit" : "debit";
   const catOpts = ["", ...settings.categories].map((c) =>
     `<option value="${esc(c)}" ${e.category === c ? "selected" : ""}>${c || "—"}</option>`).join("");
@@ -329,7 +329,7 @@ function rowHtml(e) {
     <td><select class="catsel" data-id="${e.id}">${catOpts}</select></td>
     <td>${esc(e.card || "—")} <span class="chip src-${e.source === "manual" ? "manual" : e.source === "recurring" ? "recurring" : e.source === "alert" ? "alert" : "statement"}">${srcLabel(e.source)}</span></td>
     <td class="amount ${cls}">${e.kind === "credit" ? "+" : ""}${fmt(e.amount, e.currency)}</td>
-    <td class="amount">${base == null ? '<span class="chip" title="No FX rate for ' + e.currency + '">no rate</span>' : fmtBase(base, settings)}</td>
+    <td class="amount ${cls}">${base == null ? '<span class="chip" title="No FX rate for ' + e.currency + '">no rate</span>' : (e.kind === "credit" ? "+" : "") + fmtBase(base, settings)}</td>
     <td class="right"><button class="icon-btn del" data-id="${e.id}" title="Delete">🗑</button></td>
   </tr>`;
 }
