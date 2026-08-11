@@ -141,6 +141,9 @@ export function defaultSettings() {
     rates: { ...DEFAULT_RATES_IN_AED },
     categories: [...DEFAULT_CATEGORIES],
     googleClientId: "",
+    // Remembered connected account email, used as a sign-in hint so
+    // multi-account users aren't shown the account chooser every refresh.
+    googleEmail: "",
     // Per-bank saved PDF passwords (stored locally in this browser only).
     passwords: {},
     // Which sources are enabled for import (credit cards on by default).
