@@ -117,7 +117,12 @@ export function parseStatementLines(lines, opts = {}) {
       reviewReason: reasons.join("; "),
     });
   }
-  return dedupeInternal(out);
+  // NOTE: we deliberately do NOT collapse identical lines here. A statement is
+  // authoritative — two same-day, same-amount, same-merchant charges (e.g. two
+  // coffees) are two real transactions and must both survive to review.
+  // Re-import protection lives in app.js via dedupeKey against already-saved
+  // rows, not by dropping duplicates within one statement.
+  return out;
 }
 
 // Dispatch by bank id. `opts.currency` and `opts.card` come from the source's
@@ -161,16 +166,6 @@ export function cleanMerchant(s) {
     .replace(/\b\w/g, (c) => c) // keep case
     .slice(0, 80)
     .trim();
-}
-
-function dedupeInternal(list) {
-  const seen = new Set();
-  return list.filter((t) => {
-    const k = `${t.date}|${t.amount}|${(t.description || "").slice(0, 20)}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
 }
 
 // A stable key used to avoid importing the same transaction twice across runs.
