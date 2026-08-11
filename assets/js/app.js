@@ -22,14 +22,14 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 // Signed spend contribution (in base currency):
 //  - expenses add to spend
-//  - refunds (credits that aren't card payments / cashback / income) subtract
-//  - card payments & cashback count as 0 (neither add nor reduce)
+//  - card payments (bill payments) count as 0 — they just settle the card
+//  - every other credit (refunds, cashback, reversals, …) reduces spend
+// Refunds keep their merchant's category; only the sign differs.
 // Returns null when the currency has no FX rate.
-const NON_SPEND_CREDIT_CATS = new Set(["Card Payment", "Cashback", "Income / Credit"]);
 function spendBase(e) {
   const b = toBase(e.amount, e.currency, settings);
   if (b == null) return null;
-  if (e.kind === "credit") return NON_SPEND_CREDIT_CATS.has(e.category) ? 0 : -b;
+  if (e.kind === "credit") return e.category === "Card Payment" ? 0 : -b;
   return b;
 }
 
@@ -37,6 +37,7 @@ function spendBase(e) {
 async function boot() {
   expenses = await allExpenses();
   await materializeRecurring();
+  await migrateRefundCategory();
   updateBasePill();
   document.querySelectorAll(".tab").forEach((t) =>
     t.addEventListener("click", () => go(t.dataset.view)));
@@ -69,6 +70,20 @@ function go(view) {
 
 function updateBasePill() {
   $("#basePill").textContent = "Base: " + settings.baseCurrency;
+}
+
+// One-time cleanup: the short-lived "Refund" category is gone — re-categorize
+// any refunds by their merchant and drop the stray category.
+async function migrateRefundCategory() {
+  const refs = expenses.filter((e) => e.category === "Refund");
+  if (!refs.length && !(settings.categories || []).includes("Refund")) return;
+  for (const e of refs) { e.category = guessCategory(e.description) || ""; e.updatedAt = Date.now(); }
+  if (refs.length) { await putMany(refs); expenses = await allExpenses(); }
+  if ((settings.categories || []).includes("Refund")) {
+    settings.categories = settings.categories.filter((c) => c !== "Refund");
+    saveSettings(settings); await markPrefsChanged();
+  }
+  if (refs.length) scheduleSync();
 }
 
 // ---- Recurring monthly expenses ----
@@ -206,7 +221,7 @@ function renderDashboard() {
           </tr></tfoot>
         </table>
       </div>
-      <div class="hint mt">Net spend in ${settings.baseCurrency}: refunds reduce the total; card payments and cashback are excluded.</div>
+      <div class="hint mt">Net spend in ${settings.baseCurrency}: refunds and other credits reduce the total (kept in the merchant's category); only card-bill payments are excluded.</div>
     </div>`;
 
   $$("[data-gran]").forEach((b) => b.addEventListener("click", () => { dashGran = b.dataset.gran; renderDashboard(); }));
