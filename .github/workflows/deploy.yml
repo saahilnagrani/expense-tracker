@@ -1,12 +1,13 @@
 name: Deploy to GitHub Pages
 
-# Publishes the static site on every push to the branches below, and on
-# demand from the Actions tab. No build step — the repo IS the site.
+# Publishes the static site on every push to main, and on demand from the
+# Actions tab. No build step — the repo IS the site. Only main is listed:
+# the github-pages environment blocks deploys from any other branch, so
+# triggering on feature branches only produced failing runs (and email spam).
 on:
   push:
     branches:
       - main
-      - claude/expense-tracker-gmail-k54xds
   workflow_dispatch:
 
 # Permissions the deploy-pages action needs.
