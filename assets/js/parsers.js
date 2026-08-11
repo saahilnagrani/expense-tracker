@@ -80,8 +80,13 @@ export function parseStatementLines(lines, opts = {}) {
 
     const amount = parseFloat(mm[1].replace(/,/g, ""));
     if (!isFinite(amount) || amount === 0) continue;
-    const isCredit = /CR/i.test(mm[3] || "") || amount < 0 ||
-      /payment received|thank ?you|refund|reversal|cash\s?-?back|reward\s?redemption/i.test(desc);
+    // Wio: sign alone decides — negative = purchase (expense), positive =
+    // payment/credit. Other banks: CR marker, negative amount, or credit-like
+    // wording (payment/refund/reversal/cashback) all mean a credit.
+    const isCredit = opts.negIsExpense
+      ? amount > 0
+      : (/CR/i.test(mm[3] || "") || amount < 0 ||
+         /payment received|thank ?you|refund|reversal|cash\s?-?back|reward\s?redemption/i.test(desc));
 
     // Lines that are more likely statement summaries than real transactions.
     const looksNonTxn = /\b(balance|opening|closing|total|sub-?total|available|credit limit|minimum (amount )?due|amount due|payment due|previous|carried forward|brought forward|finance charge)\b/i.test(desc);
@@ -121,6 +126,10 @@ export function parseStatementLines(lines, opts = {}) {
 // bank needs custom handling.
 export function parseStatementByBank(bank, lines, opts = {}) {
   const base = { currency: opts.currency || null, card: opts.card || "Statement" };
+  // Wio's transaction column signs purchases as NEGATIVE and payments/credits
+  // (repayments, reversals) as POSITIVE — the opposite of most statements — so
+  // tell the parser to read the sign that way.
+  if (bank === "wio") base.negIsExpense = true;
   let rows = parseStatementLines(lines, base);
   if (bank === "wio") rows = rows.map(cleanWioRow);
   return rows;
@@ -131,7 +140,10 @@ export function parseStatementByBank(bank, lines, opts = {}) {
 // rules can match, and pre-tag card payments and FX-fee lines.
 const WIO_CARD_PAYMENT = /\brepayment\b|credit card payment|\benbd\b|\badcb\b|\bfab\b|\baxis\b|noon credit|etihad guest/i;
 function cleanWioRow(t) {
-  const description = (t.description || "").replace(/^P\d{6,}\s*/i, "").trim();
+  const description = (t.description || "")
+    .replace(/^P\d{6,}\s*/i, "")   // leading reference id
+    .replace(/[+\-]\s*$/, "")       // trailing +/- left by the signed amount
+    .trim();
   const out = { ...t, description };
   if (WIO_CARD_PAYMENT.test(description)) out.category = "Card Payment";
   else if (/foreign exchange/i.test(description)) out.category = "Fees & Interest";
