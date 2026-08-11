@@ -34,6 +34,7 @@ export const DEFAULT_CATEGORIES = [
   "Housing",
   "Health",
   "Beauty",
+  "Sports",
   "Entertainment",
   "Cash & Transfers",
   "Card Payment",
@@ -51,17 +52,20 @@ export const CATEGORY_RULES = [
   [/payment received|thank ?you|credit repayment|\brepayment\b|credit card payment/i, "Card Payment"],
   [/cash\s?-?back|reward\s?redemption/i, "Cashback"],
 
+  // Sports & fitness (padel/tennis courts, gyms, booking apps)
+  [/matchi|padel|\bpadel\b|tennis|squash|\bgym\b|fitness ?first|climbing|crossfit/i, "Sports"],
+
   // Food delivery (before Groceries / generic Careem, Noon)
   [/careem food|talabat|noon food|keeta|deliveroo|hardees?|uber ?eats/i, "Food Delivery"],
 
   // Groceries (specific merchants before generic Amazon/Noon → Shopping)
-  [/amazon ?now|amazonufg|maf hyper|waitrose|careem deliveries|careem quik|al ain food|noon minutes|%\s?arabica|lulu|carrefour|spinneys|grocer|bigbasket|blinkit|zepto|instashop|supermarket/i, "Groceries"],
+  [/amazon ?now|amazonufg|maf hyper|waitrose|sainsbury|tesco|asda|\bm&s\b|marks ?& ?spencer|careem deliveries|careem quik|al ain food|noon minutes|%\s?arabica|lulu|carrefour|spinneys|grocer|bigbasket|blinkit|zepto|instashop|supermarket/i, "Groceries"],
 
-  // Restaurants / dining
-  [/mcdonald|quick snack selling|royal catering|caribou coffee|kfc|starbucks|restaurant|\bcafe\b|dining/i, "Food & Dining"],
+  // Restaurants / bars / pubs / dining (bars & pubs → Food & Dining too)
+  [/mcdonald|five guys|quick snack selling|royal catering|caribou coffee|kfc|starbucks|restauran|\bcafe\b|dining|\bpub\b|\bbar\b|tavern|brasserie|bistro|gastropub/i, "Food & Dining"],
 
-  // Transport
-  [/yango|parkonic|zofeur|dubai smart government|\brta\b|uber|\bcareem\b|\bola\b|metro|taxi|fuel|petrol|adnoc|enoc|salik/i, "Transport"],
+  // Transport (TfL, e-bikes like Forest, ride-hail, fuel, tolls)
+  [/yango|parkonic|zofeur|dubai smart government|\brta\b|\btfl\b|\bforest\b|uber|\bcareem\b|\bola\b|metro|taxi|fuel|petrol|adnoc|enoc|salik/i, "Transport"],
 
   // Travel
   [/\bvfs\b|emirates|etihad|air ?india|indigo|flight|hotel|booking\.com|airbnb|makemytrip|kiwi/i, "Travel"],
@@ -82,7 +86,7 @@ export const CATEGORY_RULES = [
   [/mede?ror|medeor|pharmacy|hospital|clinic|aster|medcare|apollo|\bhealth\b|dr\.?\s/i, "Health"],
 
   // Shopping (generic, after specific Amazon/Noon groceries)
-  [/amazon|noon|flipkart|myntra|ikea|namshi|ajio|store|shop/i, "Shopping"],
+  [/amazon|noon|flipkart|myntra|ikea|namshi|ajio|wh ?smith|store|shop/i, "Shopping"],
 
   // Entertainment
   [/vox|cinema|pvr|bookmyshow|game|steam|playstation/i, "Entertainment"],
