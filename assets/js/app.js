@@ -497,46 +497,57 @@ async function fetchAndParse() {
   const problems = [];
   $("#reviewArea").innerHTML = "";
 
-  for (const src of chosen) {
-    try {
-      setLog(`Searching ${esc(src.label)}…`);
-      const q = `from:${src.from} ${src.query || ""} has:attachment filename:pdf after:${afterStr}`.replace(/\s+/g, " ").trim();
-      const ids = await GM.searchMessages(q, 60);
-      setLog(`Found ${ids.length} statement email(s) for ${esc(src.label)}. Reading…`);
+  const spLabel = settings.spouseEnabled && settings.spouseLabel ? settings.spouseLabel : "";
+  const spName = settings.spouseName || "Spouse";
 
-      for (let i = 0; i < ids.length; i++) {
-        setLog(`${esc(src.label)}: reading statement ${i + 1}/${ids.length}…`);
-        const msg = await GM.getMessage(ids[i]);
-        const { pdfs } = GM.extractParts(msg);
-        if (!pdfs.length) continue;
-
-        const rows = [];
-        for (const att of pdfs) {
-          if (src.fileMatch && !new RegExp(src.fileMatch, "i").test(att.filename)) continue;
-          try {
-            const bytes = await GM.getAttachment(ids[i], att.attachmentId);
-            const pw = settings.passwords[src.bank] || "";
-            const { lines } = await extractText(bytes, pw);
-            if (debug) debugRaw.push({ label: src.label, filename: att.filename, lines });
-            rows.push(...parseStatementByBank(src.bank, lines, { currency: src.currency, card: src.label }));
-          } catch (err) {
-            if (err instanceof PdfPasswordError) {
-              problems.push(`🔒 ${src.label}: ${att.filename} needs a password. Add it in Settings (${src.passwordHint || "see the email"}).`);
-            } else {
-              problems.push(`⚠️ ${src.label}: couldn't read ${att.filename} — ${err.message}`);
-            }
+  // Fetch + parse one owner "spec" for a source.
+  async function runSpec(src, spec) {
+    const q = `from:${src.from} ${src.query || ""} ${spec.labelQuery || ""} has:attachment filename:pdf after:${afterStr}`.replace(/\s+/g, " ").trim();
+    setLog(`Searching ${esc(spec.cardLabel)}…`);
+    const ids = await GM.searchMessages(q, 60);
+    setLog(`Found ${ids.length} statement email(s) for ${esc(spec.cardLabel)}. Reading…`);
+    for (let i = 0; i < ids.length; i++) {
+      setLog(`${esc(spec.cardLabel)}: reading statement ${i + 1}/${ids.length}…`);
+      const msg = await GM.getMessage(ids[i]);
+      const { pdfs } = GM.extractParts(msg);
+      if (!pdfs.length) continue;
+      const rows = [];
+      for (const att of pdfs) {
+        if (src.fileMatch && !new RegExp(src.fileMatch, "i").test(att.filename)) continue;
+        try {
+          const bytes = await GM.getAttachment(ids[i], att.attachmentId);
+          const { lines } = await extractText(bytes, spec.password || "");
+          if (debug) debugRaw.push({ label: spec.cardLabel, filename: att.filename, lines });
+          rows.push(...parseStatementByBank(src.bank, lines, { currency: src.currency, card: spec.cardLabel }));
+        } catch (err) {
+          if (err instanceof PdfPasswordError) {
+            problems.push(`🔒 ${spec.cardLabel}: ${att.filename} needs a password. Add it in Settings (${src.passwordHint || "see the email"}).`);
+          } else {
+            problems.push(`⚠️ ${spec.cardLabel}: couldn't read ${att.filename} — ${err.message}`);
           }
         }
-        for (const r of rows) {
-          r.source = src.kind;
-          r.bank = src.bank;
-          r.gmailMessageId = ids[i];
-          r.category = r.category || guessCategory(r.description);
-          r.dedupeKey = dedupeKey({ ...r, source: src.kind });
-          r._dup = existing.has(r.dedupeKey);
-        }
-        parsed.push(...rows);
       }
+      for (const r of rows) {
+        r.source = src.kind; r.bank = src.bank; r.owner = spec.owner;
+        r.card = spec.cardLabel; r.gmailMessageId = ids[i];
+        r.category = r.category || guessCategory(r.description);
+        r.dedupeKey = dedupeKey({ ...r, source: src.kind });
+        r._dup = existing.has(r.dedupeKey);
+      }
+      parsed.push(...rows);
+    }
+  }
+
+  for (const src of chosen) {
+    try {
+      const specs = [];
+      if (spLabel) {
+        if (!src.spouseOnly) specs.push({ labelQuery: `-label:"${spLabel}"`, cardLabel: src.label, password: settings.passwords[src.bank] || "", owner: "me" });
+        if (src.shared || src.spouseOnly) specs.push({ labelQuery: `label:"${spLabel}"`, cardLabel: `${src.label} (${spName})`, password: (settings.spousePasswords || {})[src.bank] || "", owner: "spouse" });
+      } else if (!src.spouseOnly) {
+        specs.push({ labelQuery: "", cardLabel: src.label, password: settings.passwords[src.bank] || "", owner: "me" });
+      }
+      for (const spec of specs) await runSpec(src, spec);
     } catch (e) {
       problems.push(`⚠️ ${src.label}: ${e.message}`);
     }
@@ -741,6 +752,21 @@ function renderSettings() {
       ${!settings.googleClientId ? `<div class="hint mt">Add your Google Client ID above and press <b>Save settings</b> to enable syncing.</div>` : ""}
     </div>
 
+    <div class="card mt">
+      <div class="section-title">Household — a second person's cards</div>
+      <p class="hint">If a family member's statements are forwarded into this Gmail with a label (yours aren't), import theirs too — tagged with their name so you can filter by person, all in one household total.</p>
+      <label class="flex" style="gap:8px;cursor:pointer;font-weight:600;color:var(--text)"><input type="checkbox" id="spEnabled" ${settings.spouseEnabled ? "checked" : ""}> Also import a second person's cards</label>
+      <div id="spOpts" class="mt" style="${settings.spouseEnabled ? "" : "display:none"}">
+        <div class="row">
+          <div class="field"><label>Their name (tag)</label><input id="spName" value="${esc(settings.spouseName)}" placeholder="e.g. Harshita"></div>
+          <div class="field"><label>Gmail label on their forwarded statements</label><input id="spLabel" value="${esc(settings.spouseLabel)}" placeholder="e.g. Harshi Forward"></div>
+        </div>
+        <div class="section-title mt">Their statement PDF passwords</div>
+        ${SOURCES.filter((s) => s.shared || s.spouseOnly).map((s) => `<div class="field"><label>${esc(s.label)} — ${esc(settings.spouseName || "their")} password</label><input type="password" class="spPw" data-bank="${s.bank}" value="${esc((settings.spousePasswords || {})[s.bank] || "")}" placeholder="${esc(s.passwordHint || "PDF password")}"></div>`).join("")}
+        <div class="hint">Their ENBD Etihad Guest and ENBD Noon cards can be added once I have those sender addresses.</div>
+      </div>
+    </div>
+
     <div class="grid cols-2 mt">
       <div class="card">
         <div class="section-title">Categories</div>
@@ -806,11 +832,17 @@ function renderSettings() {
     if (!confirm("Delete ALL transactions? This cannot be undone.")) return;
     await clearAll(); expenses = []; toast("All data deleted", "ok"); go("dashboard");
   });
+  $("#spEnabled")?.addEventListener("change", (e) => { const el = $("#spOpts"); if (el) el.style.display = e.target.checked ? "" : "none"; });
   $("#saveSet").addEventListener("click", async () => {
     settings.baseCurrency = $("#setBase").value;
     settings.googleClientId = $("#setClient").value.trim();
     $$(".rateIn").forEach((el) => { settings.rates[el.dataset.cur] = parseFloat(el.value) || 0; });
     $$(".pwIn").forEach((el) => { settings.passwords[el.dataset.bank] = el.value; });
+    settings.spouseEnabled = $("#spEnabled")?.checked || false;
+    settings.spouseName = $("#spName")?.value.trim() || "";
+    settings.spouseLabel = $("#spLabel")?.value.trim() || "";
+    settings.spousePasswords = settings.spousePasswords || {};
+    $$(".spPw").forEach((el) => { settings.spousePasswords[el.dataset.bank] = el.value; });
     saveSettings(settings);
     await markPrefsChanged(); // base currency / rates / categories are synced prefs
     updateBasePill();

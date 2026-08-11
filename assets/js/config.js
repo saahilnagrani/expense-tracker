@@ -103,7 +103,7 @@ export const CATEGORY_RULES = [
 // that skip the inbox (e.g. auto-labelled by a filter) are still imported.
 export const SOURCES = [
   // --- Credit cards (on by default) ---
-  { bank: "adcb", label: "ADCB Credit Card", kind: "statement", default: true,
+  { bank: "adcb", label: "ADCB Credit Card", kind: "statement", default: true, shared: true,
     from: "estatement@adcb.com", currency: "AED",
     passwordHint: "Your ADCB Customer ID (SMS 'CID' to 2626 to retrieve)." },
   { bank: "axis-cc", label: "Axis Credit Card", kind: "statement", default: true,
@@ -115,7 +115,7 @@ export const SOURCES = [
     // restrict to the credit-card ones ("Statement of FAB Card ending ...").
     query: "subject:card",
     passwordHint: "8 digits: your year of birth + last 4 digits of your registered mobile, e.g. 19804567." },
-  { bank: "wio", label: "Wio Credit Card", kind: "statement", default: true,
+  { bank: "wio", label: "Wio Credit Card", kind: "statement", default: true, shared: true,
     from: "wio.io", currency: "AED",
     // Wio also emails transfer receipts & invoices as PDFs — restrict to the
     // monthly "Credit Statement" emails (subject) and, as a safety net, only
@@ -155,6 +155,12 @@ export function defaultSettings() {
     lookbackMonths: 12,
     // Cross-device sync via the user's private Google Drive app-data folder.
     autoSync: true,
+    // Household: import a second person's cards, separated by a Gmail label
+    // (their forwarded statements carry it; yours don't). Passwords are local.
+    spouseEnabled: false,
+    spouseName: "",
+    spouseLabel: "",
+    spousePasswords: {},
     // Fixed monthly expenses not paid by card (rent, house help, cook, …).
     // Each: { id, description, amount, currency, category, paidVia,
     //         dayOfMonth, startMonth "YYYY-MM", endMonth?, active }
