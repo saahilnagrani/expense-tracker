@@ -140,17 +140,26 @@ function emptyState() {
 }
 
 // ---------- Expenses list ----------
-let expFilter = { q: "", month: "", card: "", cat: "" };
+let expFilter = { q: "", month: "", card: "", cat: "", merchant: "" };
 function renderExpenses() {
   const cards = [...new Set(expenses.map((e) => e.card).filter(Boolean))].sort();
-  const cats = settings.categories;
   const months = [...new Set(expenses.map((e) => e.date.slice(0, 7)))].sort().reverse();
+
+  // Category & merchant facets with counts, ordered by frequency (desc).
+  const countBy = (fn) => {
+    const m = {};
+    for (const e of expenses) { const k = fn(e); m[k] = (m[k] || 0) + 1; }
+    return Object.entries(m).sort((a, b) => b[1] - a[1]);
+  };
+  const catCounts = countBy((e) => e.category || "Uncategorized");
+  const merchCounts = countBy((e) => e.description || "—");
 
   const filtered = expenses.filter((e) => {
     if (expFilter.q && !(`${e.description} ${e.card}`.toLowerCase().includes(expFilter.q.toLowerCase()))) return false;
     if (expFilter.month && e.date.slice(0, 7) !== expFilter.month) return false;
     if (expFilter.card && e.card !== expFilter.card) return false;
-    if (expFilter.cat && (e.category || "") !== expFilter.cat) return false;
+    if (expFilter.cat && (e.category || "Uncategorized") !== expFilter.cat) return false;
+    if (expFilter.merchant && (e.description || "—") !== expFilter.merchant) return false;
     return true;
   });
   const totalBase = filtered.reduce((a, e) =>
@@ -162,7 +171,8 @@ function renderExpenses() {
         <input id="fq" placeholder="Search merchant / card…" value="${esc(expFilter.q)}" style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)">
         <select id="fmonth" class="fsel"><option value="">All months</option>${months.map((m) => `<option ${expFilter.month === m ? "selected" : ""}>${m}</option>`).join("")}</select>
         <select id="fcard" class="fsel"><option value="">All cards</option>${cards.map((c) => `<option ${expFilter.card === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
-        <select id="fcat" class="fsel"><option value="">All categories</option>${cats.map((c) => `<option ${expFilter.cat === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+        <select id="fcat" class="fsel"><option value="">All categories</option>${catCounts.map(([c, n]) => `<option value="${esc(c)}" ${expFilter.cat === c ? "selected" : ""}>${esc(c)} (${n})</option>`).join("")}</select>
+        <select id="fmerchant" class="fsel" style="max-width:260px"><option value="">All merchants</option>${merchCounts.map(([m, n]) => `<option value="${esc(m)}" ${expFilter.merchant === m ? "selected" : ""}>${esc(m)} (${n})</option>`).join("")}</select>
         <button class="btn sm secondary" id="fclear">Clear</button>
         <span class="spacer"></span>
         <button class="btn sm" id="expCsv">Export CSV</button>
@@ -180,10 +190,10 @@ function renderExpenses() {
     </div>`;
 
   $("#fq").addEventListener("input", (e) => { expFilter.q = e.target.value; debouncedExp(); });
-  ["fmonth", "fcard", "fcat"].forEach((id) => $("#" + id).addEventListener("change", (e) => {
+  ["fmonth", "fcard", "fcat", "fmerchant"].forEach((id) => $("#" + id).addEventListener("change", (e) => {
     expFilter[id.slice(1)] = e.target.value; renderExpenses();
   }));
-  $("#fclear").addEventListener("click", () => { expFilter = { q: "", month: "", card: "", cat: "" }; renderExpenses(); });
+  $("#fclear").addEventListener("click", () => { expFilter = { q: "", month: "", card: "", cat: "", merchant: "" }; renderExpenses(); });
   $("#expCsv").addEventListener("click", () => exportCsv(filtered));
   $$(".catsel").forEach((sel) => sel.addEventListener("change", async (e) => {
     const exp = expenses.find((x) => x.id === e.target.dataset.id);

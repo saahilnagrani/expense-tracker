@@ -93,8 +93,14 @@ export function loadSettings() {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return defaultSettings();
     const parsed = JSON.parse(raw);
-    return { ...defaultSettings(), ...parsed,
-      rates: { ...defaultSettings().rates, ...(parsed.rates || {}) },
+    const base = defaultSettings();
+    // Union stored categories with the defaults so newly-added default
+    // categories (e.g. Food Delivery, Beauty, Housing) show up for existing users.
+    const cats = parsed.categories && parsed.categories.length ? [...parsed.categories] : [...base.categories];
+    for (const c of base.categories) if (!cats.includes(c)) cats.push(c);
+    return { ...base, ...parsed,
+      categories: cats,
+      rates: { ...base.rates, ...(parsed.rates || {}) },
       passwords: { ...(parsed.passwords || {}) } };
   } catch {
     return defaultSettings();
