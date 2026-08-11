@@ -138,7 +138,21 @@ async function runSync(silent) {
   }
 }
 
-// ---------- Dashboard: months × category spend table ----------
+// ---------- Dashboard: period × category spend table ----------
+let dashGran = "month"; // "week" | "month" | "year"
+
+function periodKey(dateStr, gran) {
+  if (gran === "year") return dateStr.slice(0, 4);
+  if (gran === "month") return dateStr.slice(0, 7);
+  // ISO week, e.g. 2026-W32
+  const d = new Date(dateStr + "T00:00:00Z");
+  const day = (d.getUTCDay() + 6) % 7; // Mon=0
+  d.setUTCDate(d.getUTCDate() - day + 3); // nearest Thursday
+  const firstThu = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const week = 1 + Math.round((d - firstThu) / (7 * 24 * 3600 * 1000));
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
 function renderDashboard() {
   if (!expenses.length) {
     views.innerHTML = emptyState();
@@ -146,47 +160,56 @@ function renderDashboard() {
     $("#emptyAdd")?.addEventListener("click", () => go("add"));
     return;
   }
-  // Pivot: month -> category -> net spend (base currency).
-  const byMonthCat = {}, catTotals = {}, monthTotals = {};
+  // Pivot: period -> category -> net spend (base currency).
+  const byPeriodCat = {}, catTotals = {}, periodTotals = {};
   for (const e of expenses) {
     const b = spendBase(e);
     if (b == null || b === 0) continue;
-    const mk = e.date.slice(0, 7);
+    const pk = periodKey(e.date, dashGran);
     const cat = e.category || "Uncategorized";
-    (byMonthCat[mk] ||= {})[cat] = (byMonthCat[mk][cat] || 0) + b;
+    (byPeriodCat[pk] ||= {})[cat] = (byPeriodCat[pk][cat] || 0) + b;
     catTotals[cat] = (catTotals[cat] || 0) + b;
-    monthTotals[mk] = (monthTotals[mk] || 0) + b;
+    periodTotals[pk] = (periodTotals[pk] || 0) + b;
   }
-  const months = Object.keys(monthTotals).sort().reverse();
+  const periods = Object.keys(periodTotals).sort().reverse();
   const cats = Object.entries(catTotals).sort((a, b) => b[1] - a[1]).map(([c]) => c);
-  const grand = Object.values(monthTotals).reduce((a, b) => a + b, 0);
-  const cell = (v) => v ? fmtBase(v, settings) : '<span class="muted">—</span>';
+  const grand = Object.values(periodTotals).reduce((a, b) => a + b, 0);
+  const num = (v) => (v || v === 0) ? v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "";
+  const cell = (v) => v ? num(v) : '<span class="muted">—</span>';
+  const colLabel = dashGran === "year" ? "Year" : dashGran === "week" ? "Week" : "Month";
 
   views.innerHTML = `
     <div class="card">
-      <div class="section-title">Monthly spend by category (${settings.baseCurrency})</div>
-      <div class="table-wrap">
+      <div class="flex" style="justify-content:space-between;align-items:center">
+        <div class="section-title" style="margin:0">Spend by category · ${settings.baseCurrency}</div>
+        <div class="pill-tabs" style="margin:0">
+          ${["week", "month", "year"].map((g) => `<button class="btn sm ${dashGran === g ? "" : "secondary"}" data-gran="${g}">${g[0].toUpperCase() + g.slice(1)}</button>`).join("")}
+        </div>
+      </div>
+      <div class="table-wrap mt">
         <table class="data pivot">
           <thead><tr>
-            <th>Month</th><th class="amount">Total spend</th>
+            <th>${colLabel}</th><th class="amount">Total</th>
             ${cats.map((c) => `<th class="amount">${esc(c)}</th>`).join("")}
           </tr></thead>
           <tbody>
-            ${months.map((mk) => `<tr>
-              <td><b>${mk}</b></td>
-              <td class="amount"><b>${fmtBase(monthTotals[mk] || 0, settings)}</b></td>
-              ${cats.map((c) => `<td class="amount">${cell(byMonthCat[mk]?.[c])}</td>`).join("")}
+            ${periods.map((pk) => `<tr>
+              <td><b>${pk}</b></td>
+              <td class="amount"><b>${num(periodTotals[pk] || 0)}</b></td>
+              ${cats.map((c) => `<td class="amount">${cell(byPeriodCat[pk]?.[c])}</td>`).join("")}
             </tr>`).join("")}
           </tbody>
           <tfoot><tr>
-            <td><b>All months</b></td>
-            <td class="amount"><b>${fmtBase(grand, settings)}</b></td>
-            ${cats.map((c) => `<td class="amount"><b>${fmtBase(catTotals[c], settings)}</b></td>`).join("")}
+            <td><b>All ${colLabel.toLowerCase()}s</b></td>
+            <td class="amount"><b>${num(grand)}</b></td>
+            ${cats.map((c) => `<td class="amount"><b>${num(catTotals[c])}</b></td>`).join("")}
           </tr></tfoot>
         </table>
       </div>
-      <div class="hint mt">Net spend: refunds reduce the total; card payments and cashback are excluded. Converted to ${settings.baseCurrency} using the rates in Settings.</div>
+      <div class="hint mt">Net spend in ${settings.baseCurrency}: refunds reduce the total; card payments and cashback are excluded.</div>
     </div>`;
+
+  $$("[data-gran]").forEach((b) => b.addEventListener("click", () => { dashGran = b.dataset.gran; renderDashboard(); }));
 }
 
 function emptyState() {
