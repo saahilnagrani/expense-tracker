@@ -38,6 +38,7 @@ export const DEFAULT_CATEGORIES = [
   "Cash & Transfers",
   "Card Payment",
   "Cashback",
+  "Refund",
   "Fees & Interest",
   "Income / Credit",
   "Other",
@@ -50,6 +51,7 @@ export const CATEGORY_RULES = [
   // Card bill payments & cashback (also treated as credits, kept out of spend)
   [/payment received|thank ?you/i, "Card Payment"],
   [/cash\s?-?back|reward\s?redemption/i, "Cashback"],
+  [/refund|reversal|chargeback|disputed/i, "Refund"],
 
   // Food delivery (before Groceries / generic Careem, Noon)
   [/careem food|talabat|noon food|keeta|deliveroo|hardees?/i, "Food Delivery"],
