@@ -1,0 +1,38 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Expense Tracker</title>
+<link rel="stylesheet" href="./assets/css/styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💸</text></svg>" />
+
+<div id="app">
+  <header class="topbar">
+    <div class="brand">💸 <span>Expense Tracker</span></div>
+    <nav class="tabs">
+      <button class="tab" data-view="dashboard">Dashboard</button>
+      <button class="tab" data-view="expenses">Expenses</button>
+      <button class="tab" data-view="add">Add expense</button>
+      <button class="tab" data-view="import">Import from Gmail</button>
+      <button class="tab" data-view="settings">Settings</button>
+    </nav>
+    <div class="base-pill" id="basePill" title="Base currency"></div>
+  </header>
+
+  <main id="views">
+    <!-- Views are rendered by app.js -->
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <!-- Modal host -->
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="modalTitle"></h3>
+        <button class="icon-btn" id="modalClose" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./assets/js/app.js"></script>

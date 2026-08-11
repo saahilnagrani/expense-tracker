@@ -1,0 +1,49 @@
+name: Deploy to GitHub Pages
+
+# Publishes the static site on every push to the branches below, and on
+# demand from the Actions tab. No build step — the repo IS the site.
+on:
+  push:
+    branches:
+      - main
+      - claude/expense-tracker-gmail-k54xds
+  workflow_dispatch:
+
+# Permissions the deploy-pages action needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a newer deploy supersede an in-progress one, but don't cancel a run
+# that's already publishing.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        # One-time manual step required first: repo Settings -> Pages ->
+        # Source -> GitHub Actions. The deploy token can publish to Pages but
+        # isn't allowed to create the Pages site, so it must exist already.
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Upload the whole repo root — index.html, assets/, vendor/,
+          # and .nojekyll are all served as-is.
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
