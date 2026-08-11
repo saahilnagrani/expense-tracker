@@ -70,6 +70,9 @@ export const SOURCES = [
     passwordHint: "First 4 letters of name (CAPS) + DOB as DDMM, e.g. CKAJ1102 — or + last 4 digits of the card." },
   { bank: "fab", label: "FAB Credit Card", kind: "statement", default: true,
     from: "estatement@bankfab.com", currency: "AED",
+    // FAB emails card, account AND loan statements from the same address —
+    // restrict to the credit-card ones ("Statement of FAB Card ending ...").
+    query: "subject:card",
     passwordHint: "8 digits: your year of birth + last 4 digits of your registered mobile, e.g. 19804567." },
   { bank: "wio", label: "Wio Credit Card", kind: "statement", default: true,
     from: "wio.io", currency: "AED",

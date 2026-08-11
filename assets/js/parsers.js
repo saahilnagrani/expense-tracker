@@ -83,6 +83,23 @@ export function parseStatementLines(lines, opts = {}) {
     const isCredit = /CR/i.test(mm[3] || "") || amount < 0 ||
       /payment received|thank you|refund|reversal|cashback/i.test(desc);
 
+    // Lines that are more likely statement summaries than real transactions.
+    const looksNonTxn = /\b(balance|opening|closing|total|sub-?total|available|credit limit|minimum (amount )?due|amount due|payment due|previous|carried forward|brought forward|finance charge)\b/i.test(desc);
+
+    // A rough, honest confidence from concrete signals (not a fixed number).
+    let confidence = 0.5;
+    if (date) confidence += 0.15;
+    if (/[a-z]/i.test(desc) && desc.length >= 4) confidence += 0.2;
+    if (currency) confidence += 0.05;
+    if (/\.\d{2}$/.test(mm[1])) confidence += 0.1;
+    if (looksNonTxn) confidence -= 0.35;
+    confidence = Math.max(0.1, Math.min(0.97, confidence));
+
+    const reasons = [];
+    if (looksNonTxn) reasons.push("May be a summary/total line, not a purchase");
+    if (desc.length < 4 || !/[a-z]/i.test(desc)) reasons.push("Weak/short description");
+    if (isCredit) reasons.push("Looks like a credit/refund");
+
     out.push({
       date,
       description: desc,
@@ -90,7 +107,9 @@ export function parseStatementLines(lines, opts = {}) {
       currency: currency,
       kind: isCredit ? "credit" : "expense",
       card,
-      confidence: 0.6,
+      confidence,
+      needsReview: confidence < 0.6 || looksNonTxn,
+      reviewReason: reasons.join("; "),
     });
   }
   return dedupeInternal(out);

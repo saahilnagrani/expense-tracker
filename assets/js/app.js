@@ -333,7 +333,7 @@ async function fetchAndParse() {
   for (const src of chosen) {
     try {
       setLog(`Searching ${esc(src.label)}…`);
-      const q = `from:${src.from} has:attachment filename:pdf after:${afterStr}`;
+      const q = `from:${src.from} ${src.query || ""} has:attachment filename:pdf after:${afterStr}`.replace(/\s+/g, " ").trim();
       const ids = await GM.searchMessages(q, 60);
       setLog(`Found ${ids.length} statement email(s) for ${esc(src.label)}. Reading…`);
 
@@ -378,34 +378,139 @@ async function fetchAndParse() {
 }
 
 let reviewRows = [];
+let revFilter = { q: "", source: "", needsOnly: false };
+
 function renderReview(rows, problems) {
-  reviewRows = rows;
   const fresh = rows.filter((r) => !r._dup);
+  // Default: auto-select clean rows; leave "needs review" rows unticked so
+  // you consciously include them after checking.
+  fresh.forEach((r) => { if (r._sel === undefined) r._sel = !r.needsReview; });
+  reviewRows = fresh;
+  revFilter = { q: "", source: "", needsOnly: false };
   const dupCount = rows.length - fresh.length;
   const area = $("#reviewArea");
   if (!rows.length) {
     area.innerHTML = `<div class="card">
       ${problems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("") || ""}
-      <div class="empty"><div class="big">🔍</div><p class="muted">No transactions parsed. If you have statements, check that the PDF password is set in Settings, or open the debug view below.</p></div>
+      <div class="empty"><div class="big">🔍</div><p class="muted">No transactions parsed. If you have statements, check that the PDF password is set in Settings.</p></div>
     </div>`;
     return;
   }
+  const sources = [...new Set(fresh.map((r) => r.card).filter(Boolean))].sort();
   area.innerHTML = `<div class="card">
     <div class="flex">
-      <div class="section-title" style="margin:0">Review ${fresh.length} new transaction(s)</div>
+      <div class="section-title" style="margin:0">Review imported transactions</div>
       <span class="spacer"></span>
-      <button class="btn sm secondary" id="revAll">Select all</button>
-      <button class="btn sm secondary" id="revNone">None</button>
+      <button class="btn sm secondary" id="revAll">Select shown</button>
+      <button class="btn sm secondary" id="revNone">Clear shown</button>
       <button class="btn" id="revSave">Save selected</button>
     </div>
     ${dupCount ? `<div class="hint mt">${dupCount} already-imported transaction(s) hidden.</div>` : ""}
     ${problems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("")}
-    <div class="mt">${fresh.map((r, i) => reviewRowHtml(r, i)).join("")}</div>
+    <div class="flex mt">
+      <input id="revSearch" placeholder="Search description / card…" style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)">
+      <select id="revSource" class="fsel"><option value="">All sources</option>${sources.map((s) => `<option>${esc(s)}</option>`).join("")}</select>
+      <label class="flex" style="gap:6px;cursor:pointer"><input type="checkbox" id="revNeedsOnly"> Needs review only</label>
+      <span class="spacer"></span>
+      <span class="hint" id="revCounts"></span>
+    </div>
+    <div class="table-wrap mt">
+      <table class="data">
+        <thead><tr>
+          <th style="width:26px"></th><th>Date</th><th>Description</th>
+          <th class="amount">Amount</th><th>Cur</th><th>Type</th><th>Category</th><th>Source</th><th>Review</th>
+        </tr></thead>
+        <tbody id="revBody"></tbody>
+      </table>
+    </div>
   </div>`;
 
-  $("#revAll").addEventListener("click", () => $$(".revChk").forEach((c) => c.checked = true));
-  $("#revNone").addEventListener("click", () => $$(".revChk").forEach((c) => c.checked = false));
-  $("#revSave").addEventListener("click", () => saveReview(fresh));
+  $$(".fsel").forEach((s) => s.style.cssText = "padding:9px 10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)");
+  $("#revSearch").addEventListener("input", (e) => { revFilter.q = e.target.value; renderRevBody(); });
+  $("#revSource").addEventListener("change", (e) => { revFilter.source = e.target.value; renderRevBody(); });
+  $("#revNeedsOnly").addEventListener("change", (e) => { revFilter.needsOnly = e.target.checked; renderRevBody(); });
+  $("#revAll").addEventListener("click", () => { filteredRev().forEach(({ r }) => (r._sel = true)); renderRevBody(); });
+  $("#revNone").addEventListener("click", () => { filteredRev().forEach(({ r }) => (r._sel = false)); renderRevBody(); });
+  $("#revSave").addEventListener("click", saveReview);
+  renderRevBody();
+}
+
+function filteredRev() {
+  const q = revFilter.q.toLowerCase();
+  return reviewRows.map((r, i) => ({ r, i })).filter(({ r }) => {
+    if (q && !(`${r.description} ${r.card}`.toLowerCase().includes(q))) return false;
+    if (revFilter.source && r.card !== revFilter.source) return false;
+    if (revFilter.needsOnly && !r.needsReview) return false;
+    return true;
+  });
+}
+
+function renderRevBody() {
+  const body = $("#revBody");
+  if (!body) return;
+  const rows = filteredRev();
+  body.innerHTML = rows.map(({ r, i }) => reviewRowHtml(r, i)).join("") ||
+    `<tr><td colspan="9" class="hint" style="padding:20px">No rows match this filter.</td></tr>`;
+  updateRevCounts();
+  body.querySelectorAll("[data-f]").forEach((el) => el.addEventListener("input", () => {
+    const i = +el.dataset.i, f = el.dataset.f;
+    if (reviewRows[i]) reviewRows[i][f] = f === "amount" ? parseFloat(el.value) : el.value;
+  }));
+  body.querySelectorAll(".revChk").forEach((c) => c.addEventListener("change", () => {
+    const i = +c.dataset.i;
+    if (reviewRows[i]) reviewRows[i]._sel = c.checked;
+    updateRevCounts();
+  }));
+}
+
+function updateRevCounts() {
+  const el = $("#revCounts");
+  if (!el) return;
+  const total = reviewRows.length;
+  const shown = filteredRev().length;
+  const sel = reviewRows.filter((r) => r._sel).length;
+  const need = reviewRows.filter((r) => r.needsReview).length;
+  el.innerHTML = `Showing <b>${shown}</b> of ${total} · <b>${sel}</b> selected` +
+    (need ? ` · <span style="color:var(--warn)">${need} need review</span>` : "");
+}
+
+function reviewRowHtml(r, i) {
+  const cats = ["", ...settings.categories].map((c) =>
+    `<option value="${esc(c)}" ${r.category === c ? "selected" : ""}>${c || "—"}</option>`).join("");
+  return `<tr class="${r.needsReview ? "revneeds" : ""}">
+    <td><input type="checkbox" class="revChk" data-i="${i}" ${r._sel ? "checked" : ""}></td>
+    <td><input type="date" class="cellin" data-i="${i}" data-f="date" value="${r.date}"></td>
+    <td><input class="cellin" data-i="${i}" data-f="description" value="${esc(r.description)}" style="min-width:200px"></td>
+    <td class="amount"><input type="number" step="0.01" class="cellin amt" data-i="${i}" data-f="amount" value="${r.amount}" style="width:96px"></td>
+    <td>${esc(r.currency || "?")}</td>
+    <td><select class="cellin" data-i="${i}" data-f="kind"><option value="expense" ${r.kind !== "credit" ? "selected" : ""}>Expense</option><option value="credit" ${r.kind === "credit" ? "selected" : ""}>Credit</option></select></td>
+    <td><select class="cellin" data-i="${i}" data-f="category">${cats}</select></td>
+    <td class="hint" style="white-space:nowrap">${esc(r.card || "")}</td>
+    <td>${r.needsReview ? `<span class="chip warn" title="${esc(r.reviewReason || "Check this row")}">review</span>` : `<span class="hint">ok</span>`}</td>
+  </tr>`;
+}
+
+async function saveReview() {
+  const selected = reviewRows.filter((r) => r._sel);
+  if (!selected.length) return toast("Nothing selected", "err");
+  const toSave = selected.map((r) => {
+    const e = {
+      id: uid(), date: r.date, description: r.description,
+      amount: Math.abs(parseFloat(r.amount) || 0), currency: r.currency,
+      category: r.category || guessCategory(r.description), card: r.card,
+      kind: r.kind === "credit" ? "credit" : "expense",
+      source: r.source, bank: r.bank, gmailMessageId: r.gmailMessageId,
+      createdAt: new Date().toISOString(), updatedAt: Date.now(),
+    };
+    e.dedupeKey = dedupeKey(e);
+    return e;
+  }).filter((e) => e.amount > 0);
+
+  await putMany(toSave);
+  expenses = await allExpenses();
+  scheduleSync();
+  toast(`Imported ${toSave.length} transaction(s) ✓`, "ok");
+  go("expenses");
 }
 
 function reviewRowHtml(r, i) {
