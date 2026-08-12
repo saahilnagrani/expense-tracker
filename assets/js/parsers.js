@@ -54,6 +54,10 @@ export function guessCategory(desc) {
 // ADCB / Axis / HDFC / BoI statements and any similar layout. Bank-specific
 // tweaks live in the wrappers below.
 // ---------------------------------------------------------------------------
+// Statement summary rows that look like transactions (start with a date, end
+// with an amount) but are balances/limits/dues — drop them entirely.
+const SUMMARY_LINE = /new balance outstanding|balance outstanding|outstanding balance|opening balance|closing balance|previous balance|total amount due|minimum (amount|payment) due|credit limit|available (credit|limit|cash)/i;
+
 export function parseStatementLines(lines, opts = {}) {
   const currency = opts.currency || null;
   const card = opts.card || opts.label || "Statement";
@@ -88,6 +92,9 @@ export function parseStatementLines(lines, opts = {}) {
     mid = mid.replace(/^[|\-–—:]+/, "").trim();
     const desc = cleanMerchant(mid);
     if (!desc || desc.length < 2) continue;
+    // Hard-skip statement summary rows (balances, limits, dues) — these are
+    // never real transactions even though they start with a date and amount.
+    if (SUMMARY_LINE.test(desc)) continue;
 
     const amount = parseFloat(mm[1].replace(/,/g, ""));
     if (!isFinite(amount) || amount === 0) continue;
