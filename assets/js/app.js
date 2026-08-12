@@ -807,14 +807,14 @@ function renderSettings() {
         <div class="field"><label>Google OAuth Client ID</label><input id="setClient" value="${esc(settings.googleClientId)}" placeholder="xxxxx.apps.googleusercontent.com"></div>
         <p class="hint">Needed to read statements from Gmail on a static site. Create a free <b>Web</b> OAuth Client ID in Google Cloud, enable the Gmail API, and add this site's URL as an authorized JavaScript origin. Full walkthrough in the README.</p>
         <div class="section-title mt">Statement PDF passwords</div>
-        <p class="hint">Bank statement PDFs are encrypted. Passwords are stored only in this browser.${settings.spouseEnabled ? " A dash means that card isn't that person's." : ""}</p>
+        <p class="hint">Bank statement PDFs are encrypted. Passwords sync across your devices through your private Google Drive app folder (readable only by this app).${settings.spouseEnabled ? " A dash means that card isn't that person's." : ""}</p>
         ${pwTable()}
       </div>
     </div>
 
     <div class="card mt">
       <div class="section-title">Sync across devices (Google Drive)</div>
-      <p class="hint">Syncs your data through a private folder in your own Google Drive that only this app can read — the same expenses then appear on every device. Passwords and the Client ID stay on each device and are never uploaded.</p>
+      <p class="hint">Syncs your data through a private folder in your own Google Drive that only this app can read — expenses, categories, household settings and PDF passwords appear on every device. Only the Google Client ID stays per-device (you enter it once when connecting).</p>
       <div class="flex">
         ${GM.isSignedIn()
           ? `<span class="okbox" style="padding:6px 10px">Google account connected</span><button class="btn" id="syncNow">Sync now</button>`
