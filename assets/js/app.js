@@ -624,6 +624,13 @@ async function fetchAndParse() {
       for (const r of rows) {
         r.source = src.kind; r.bank = src.bank; r.owner = spec.owner;
         r.card = spec.cardLabel; r.gmailMessageId = ids[i];
+        // Add-on / secondary card on the same statement → tag it to that
+        // cardholder (first name from the statement's section header).
+        if (r.secondaryHolder) {
+          const fn = (r.secondaryHolder.split(/\s+/)[0] || "");
+          const nice = fn ? fn.charAt(0).toUpperCase() + fn.slice(1).toLowerCase() : "";
+          if (nice) { r.card = `${spec.cardLabel} (${nice})`; r.owner = "spouse"; }
+        }
         r.category = r.category || guessCategory(r.description);
         r.dedupeKey = dedupeKey({ ...r, source: src.kind });
         r._dup = existing.has(r.dedupeKey);

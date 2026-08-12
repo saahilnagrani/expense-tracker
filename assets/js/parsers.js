@@ -60,10 +60,21 @@ export function parseStatementLines(lines, opts = {}) {
   const out = [];
   const moneyRe = /(-?\d[\d,]*\.\d{2})(\s*(CR|DR|Cr|Dr))?\s*$/;
   const dateHead = /^\s*(\d{1,2}[\/\-.][A-Za-z0-9]{2,3}[\/\-.]\d{2,4}|\d{1,2}\s+[A-Za-z]{3}\s+\d{2,4}|[A-Za-z]{3}\s+\d{1,2},?\s+\d{4})/;
+  // Some statements (e.g. Axis) split transactions into per-card sections with
+  // a header like "Card No.: 451460******2242  Name  HARSHITA KAKWANI". Track
+  // the current cardholder so each transaction knows which card it's on.
+  const cardHeadRe = /card\s*no[.:\s]+([\dXx*]+)\s+name\s+([A-Za-z][A-Za-z .'-]+)/i;
+  let holder = null, card4 = null;
 
   for (const raw of lines) {
     const line = raw.replace(/\s+/g, " ").trim();
     if (!line) continue;
+    const hh = line.match(cardHeadRe);
+    if (hh) {
+      card4 = (hh[1].match(/(\d{4})\s*$/) || [])[1] || null;
+      holder = hh[2].trim().replace(/\s+/g, " ").slice(0, 40);
+      continue;
+    }
     const dm = line.match(dateHead);
     const mm = line.match(moneyRe);
     if (!dm || !mm) continue;
@@ -112,6 +123,8 @@ export function parseStatementLines(lines, opts = {}) {
       currency: currency,
       kind: isCredit ? "credit" : "expense",
       card,
+      cardHolder: holder,
+      card4,
       confidence,
       needsReview: confidence < 0.6 || looksNonTxn,
       reviewReason: reasons.join("; "),
@@ -137,6 +150,15 @@ export function parseStatementByBank(bank, lines, opts = {}) {
   if (bank === "wio") base.negIsExpense = true;
   let rows = parseStatementLines(lines, base);
   if (bank === "wio") rows = rows.map(cleanWioRow);
+  // If the statement is split into per-card sections (primary + add-on cards),
+  // flag transactions belonging to a cardholder other than the primary (first)
+  // one so the app can tag them to that person.
+  const primary = (rows.find((r) => r.cardHolder) || {}).cardHolder || null;
+  if (primary) {
+    for (const r of rows) {
+      if (r.cardHolder && r.cardHolder !== primary) r.secondaryHolder = r.cardHolder;
+    }
+  }
   return rows;
 }
 
