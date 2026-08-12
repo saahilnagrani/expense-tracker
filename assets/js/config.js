@@ -119,6 +119,10 @@ export const SOURCES = [
   // --- Credit cards (on by default) ---
   { bank: "adcb", label: "ADCB Credit Card", kind: "statement", default: true, shared: true,
     from: "estatement@adcb.com", currency: "AED",
+    // ADCB emails credit-card AND bank-account statements from this address.
+    // Credit-card PDFs are named "ADCBCreditCard_…"; account ones "ADCBStmt_…".
+    // Only parse the credit-card attachments.
+    fileMatch: "adcbcreditcard",
     passwordHint: "Your ADCB Customer ID (SMS 'CID' to 2626 to retrieve)." },
   { bank: "axis-cc", label: "Axis Credit Card", kind: "statement", default: true,
     from: "cc.statements@axis.bank.in", currency: "INR",
