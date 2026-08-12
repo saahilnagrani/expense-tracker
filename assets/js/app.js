@@ -385,7 +385,7 @@ function renderDashboard() {
           ${["week", "month", "year"].map((g) => `<button class="btn sm ${dashGran === g ? "" : "secondary"}" data-gran="${g}">${g[0].toUpperCase() + g.slice(1)}</button>`).join("")}
         </div>
       </div>
-      <div class="table-wrap mt">
+      <div class="table-wrap dash-scroll mt">
         <table class="data pivot">
           <thead><tr>
             <th>${colLabel}</th><th class="amount">Total</th>

@@ -235,6 +235,13 @@ table.data td { vertical-align: middle; }
 /* Dashboard pivot: sticky Month column + emphasized totals row */
 table.data.pivot th:first-child, table.data.pivot td:first-child { position: sticky; left: 0; background: var(--panel); z-index: 1; }
 table.data.pivot tbody tr:hover td:first-child { background: var(--panel-2); }
+/* Dashboard: scroll the table inside a capped panel with a frozen header row.
+   The week/month/year selector sits above this panel, so it stays put too. */
+.dash-scroll { max-height: calc(100vh - 220px); overflow: auto; }
+.dash-scroll table.data.pivot thead th { position: sticky; top: 0; z-index: 2; background: var(--panel); }
+.dash-scroll table.data.pivot thead th:first-child { z-index: 3; } /* top-left corner */
+.dash-scroll table.data.pivot tfoot td { position: sticky; bottom: 0; z-index: 2; background: var(--panel); }
+.dash-scroll table.data.pivot tfoot td:first-child { z-index: 3; }
 table.data tfoot td { border-top: 2px solid var(--border); border-bottom: none; background: var(--panel-2); }
 table.data.pivot tfoot td:first-child { background: var(--panel-2); }
 
