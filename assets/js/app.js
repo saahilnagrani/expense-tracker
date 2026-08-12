@@ -188,6 +188,43 @@ async function reapplyFeeAttribution() {
   toast(`Re-filed ${changed.length} fee/GST transaction(s) ✓`, "ok");
 }
 
+// Re-check every saved transaction's category against the CURRENT rules (plus
+// forex-fee attribution), and show a preview of what would change before
+// touching anything. A rule only overrides where it actually matches, so a
+// manual category on a merchant no rule covers is left alone.
+function recheckCategories() {
+  const clones = expenses.map((e) => ({ ...e, category: guessCategory(e.description) || e.category }));
+  linkFeesToPurchases(clones, settings.attributeFees !== false, { flag: false });
+  const changes = [];
+  for (let i = 0; i < clones.length; i++) {
+    const before = expenses[i], after = clones[i];
+    if ((after.category || "") !== (before.category || "")) {
+      changes.push({ id: before.id, desc: before.description, card: before.card,
+        from: before.category || "—", to: after.category || "—", newCat: after.category || "" });
+    }
+  }
+  if (!changes.length) { toast("All categories already match the rules ✓", "ok"); return; }
+  const rowsHtml = changes.slice(0, 500).map((c) =>
+    `<tr><td>${esc(c.desc)}</td><td class="hint" style="white-space:nowrap">${esc(c.card || "")}</td><td class="hint">${esc(c.from)}</td><td>→</td><td><b>${esc(c.to)}</b></td></tr>`).join("");
+  openModal(`Re-check categories — ${changes.length} change(s)`, `
+    <p class="hint">These saved transactions would be re-categorized to match the current rules${settings.attributeFees !== false ? " (including forex-fee attribution)" : ""}. Amounts are unchanged. Merchants no rule matches keep their current category.</p>
+    <div class="table-wrap" style="max-height:52vh;overflow:auto"><table class="data"><thead><tr><th>Description</th><th>Card</th><th>From</th><th></th><th>To</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
+    ${changes.length > 500 ? `<p class="hint">Showing the first 500 of ${changes.length}.</p>` : ""}
+    <div class="flex mt" style="justify-content:flex-end;gap:8px"><button class="btn secondary" id="rcCancel">Cancel</button><button class="btn" id="rcApply">Apply ${changes.length} change(s)</button></div>`);
+  $("#rcCancel").addEventListener("click", closeModal);
+  $("#rcApply").addEventListener("click", async () => {
+    const byId = new Map(changes.map((c) => [c.id, c.newCat]));
+    const updated = expenses.filter((e) => byId.has(e.id))
+      .map((e) => ({ ...e, category: byId.get(e.id), updatedAt: Date.now() }));
+    await putMany(updated);
+    expenses = await allExpenses();
+    scheduleSync();
+    closeModal();
+    toast(`Re-categorized ${updated.length} transaction(s) ✓`, "ok");
+    renderSettings();
+  });
+}
+
 // ---- Recurring monthly expenses ----
 // Materialize a real expense for every month from each template's start month
 // up to the current month. IDs are deterministic (recur_<tpl>_<YYYY-MM>) so
@@ -962,8 +999,12 @@ function renderSettings() {
         <div id="catList" class="flex">${sortedCats().map((c) => `<span class="chip cat">${esc(c)} <button class="icon-btn catDel" data-c="${esc(c)}" style="padding:0 4px">✕</button></span>`).join("")}</div>
         <div class="flex mt"><input id="newCat" placeholder="New category" style="max-width:200px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2)"><button class="btn sm secondary" id="addCat">Add</button></div>
         <div class="flex mt" style="border-top:1px solid var(--border);padding-top:12px">
-          <button class="btn sm secondary" id="recat">Re-categorize uncategorized</button>
-          <span class="hint">${expenses.filter((e) => !e.category).length} uncategorized · applies the current rules to blank categories only</span>
+          <button class="btn sm" id="recheckCats">Re-check all categories against the rules</button>
+          <span class="hint">Previews every saved transaction whose category no longer matches the current rules, then fixes them on your OK.</span>
+        </div>
+        <div class="flex mt">
+          <button class="btn sm secondary" id="recat">Re-categorize uncategorized only</button>
+          <span class="hint">${expenses.filter((e) => !e.category).length} uncategorized · fills blank categories only, never changes existing ones</span>
         </div>
         <label class="flex mt" style="gap:8px;cursor:pointer;border-top:1px solid var(--border);padding-top:12px">
           <input type="checkbox" id="attrFees" ${settings.attributeFees !== false ? "checked" : ""}>
@@ -1006,6 +1047,7 @@ function renderSettings() {
     renderSettings();
   });
   $("#reFees")?.addEventListener("click", reapplyFeeAttribution);
+  $("#recheckCats")?.addEventListener("click", recheckCategories);
   $$(".catDel").forEach((b) => b.addEventListener("click", () => {
     settings.categories = settings.categories.filter((c) => c !== b.dataset.c); renderSettings();
   }));
@@ -1101,6 +1143,11 @@ function toast(msg, kind = "") {
   const el = $("#toast");
   el.textContent = msg; el.className = "toast " + kind; el.hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => (el.hidden = true), 2800);
+}
+function openModal(title, html) {
+  $("#modalTitle").textContent = title;
+  $("#modalBody").innerHTML = html;
+  $("#modal").hidden = false;
 }
 function closeModal() { $("#modal").hidden = true; }
 
