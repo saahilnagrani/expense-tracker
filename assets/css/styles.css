@@ -436,6 +436,28 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
   .dash-head { gap: 8px; }
 }
 
+/* Chart-view category filter row. The big native checkbox is what made these
+   bulky; the chip itself carries the on/off state (lit vs dimmed) and the
+   hidden input keeps the native label-click + change event working. */
+.dash-cats { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.dash-cats .mini {
+  appearance: none; border: 1px solid var(--border); background: var(--chip); color: var(--muted);
+  font: inherit; font-size: 12px; font-weight: 700; line-height: 1;
+  padding: 6px 11px; border-radius: 999px; cursor: pointer;
+  transition: color .15s ease, border-color .15s ease;
+}
+.dash-cats .mini:hover { color: var(--text); border-color: color-mix(in srgb, var(--brand) 45%, var(--border)); }
+.dash-cats .mini:active { transform: translateY(1px); }
+.dcat-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px;
+  background: var(--chip); color: var(--text); font-size: 12px; font-weight: 600; line-height: 1;
+  cursor: pointer; user-select: none; transition: opacity .15s ease;
+}
+.dcat-chip .dot { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+.dcat-chip input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+.dcat-chip:has(input:not(:checked)) { opacity: .4; }
+.dcat-chip:has(input:focus-visible) { outline: 2px solid var(--brand); outline-offset: 2px; }
+
 /* ------------------------------------------------------------------ *
  * Mobile: turn the wide data tables into stacked cards (one card per
  * row) so nothing is cut off and there's no horizontal scroll. Desktop
