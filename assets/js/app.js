@@ -574,7 +574,7 @@ function renderExpenses() {
       </div>
       <div class="hint mt" id="expCount"></div>
       <div class="table-wrap mt">
-        <table class="data">
+        <table class="data tbl-exp">
           <thead><tr>
             <th>Date</th><th>Description</th><th>Category</th><th>Card / Source</th>
             <th class="amount">Amount</th><th class="amount">In ${settings.baseCurrency}</th><th>Spend</th><th></th>
@@ -653,14 +653,14 @@ function rowHtml(e) {
   const st = spendStatus(e);
   const catOpts = catOptionsHtml(e.category);
   return `<tr>
-    <td style="white-space:nowrap">${fmtDate(e.date)}</td>
-    <td>${esc(e.description)}${e.kind === "credit" ? ' <span class="chip src-alert">credit</span>' : ""}</td>
-    <td><select class="catsel" data-id="${e.id}">${catOpts}</select></td>
-    <td>${esc(e.card || "—")} <span class="chip src-${e.source === "manual" ? "manual" : e.source === "recurring" ? "recurring" : e.source === "alert" ? "alert" : "statement"}">${srcLabel(e.source)}</span></td>
-    <td class="amount ${cls}">${e.kind === "credit" ? "+" : ""}${fmt(e.amount, e.currency)}</td>
-    <td class="amount ${cls}">${base == null ? '<span class="chip" title="No FX rate for ' + e.currency + '">no rate</span>' : (e.kind === "credit" ? "+" : "") + fmtBase(base, settings)}</td>
-    <td><span class="chip spend-${st.cls}" title="${esc(st.title)}">${st.txt}</span></td>
-    <td class="right"><button class="icon-btn del" data-id="${e.id}" title="Delete">${icon("trash",16)}</button></td>
+    <td data-c="date" style="white-space:nowrap">${fmtDate(e.date)}</td>
+    <td data-c="desc">${esc(e.description)}${e.kind === "credit" ? ' <span class="chip src-alert">credit</span>' : ""}</td>
+    <td data-c="cat"><select class="catsel" data-id="${e.id}">${catOpts}</select></td>
+    <td data-c="src">${esc(e.card || "—")} <span class="chip src-${e.source === "manual" ? "manual" : e.source === "recurring" ? "recurring" : e.source === "alert" ? "alert" : "statement"}">${srcLabel(e.source)}</span></td>
+    <td data-c="amt" class="amount ${cls}">${e.kind === "credit" ? "+" : ""}${fmt(e.amount, e.currency)}</td>
+    <td data-c="base" class="amount ${cls}">${base == null ? '<span class="chip" title="No FX rate for ' + e.currency + '">no rate</span>' : (e.kind === "credit" ? "+" : "") + fmtBase(base, settings)}</td>
+    <td data-c="spend"><span class="chip spend-${st.cls}" title="${esc(st.title)}">${st.txt}</span></td>
+    <td data-c="del" class="right"><button class="icon-btn del" data-id="${e.id}" title="Delete">${icon("trash",16)}</button></td>
   </tr>`;
 }
 function srcLabel(s) { return s === "manual" ? "manual" : s === "recurring" ? "recurring" : s === "alert" ? "alert" : "statement"; }
@@ -687,18 +687,18 @@ function renderAdd() {
         <div class="field" style="max-width:120px"><label>&nbsp;</label><button class="btn" id="rcAdd">Add</button></div>
       </div>
       ${list.length ? `
-      <div class="table-wrap mt"><table class="data"><thead><tr>
+      <div class="table-wrap mt"><table class="data tbl-fixed"><thead><tr>
         <th>Description</th><th class="amount">Amount</th><th>Day</th><th>Category</th><th>Paid via</th><th>Start</th><th>End</th><th></th>
       </tr></thead><tbody>
         ${list.map((t) => `<tr${t.active === false ? ' class="muted"' : ""}>
-          <td>${esc(t.description)}</td>
-          <td class="amount">${fmt(t.amount, t.currency)}</td>
-          <td>${t.dayOfMonth || 1}</td>
-          <td>${esc(t.category || "—")}</td>
-          <td>${esc(t.paidVia || "—")}</td>
-          <td class="hint" style="white-space:nowrap">${esc(fmtMonth(t.startMonth))}${t.active === false ? " · paused" : ""}</td>
-          <td><input type="month" class="cellin recEnd" data-id="${t.id}" value="${t.endMonth || ""}" style="width:150px"></td>
-          <td class="right"><button class="btn sm secondary recToggle" data-id="${t.id}">${t.active === false ? "Resume" : "Pause"}</button> <button class="icon-btn recDel" data-id="${t.id}" title="Delete">${icon("trash",16)}</button></td>
+          <td data-c="desc">${esc(t.description)}</td>
+          <td data-c="amt" class="amount" data-label="Amount">${fmt(t.amount, t.currency)}</td>
+          <td data-c="day" data-label="Day">${t.dayOfMonth || 1}</td>
+          <td data-c="cat" data-label="Category">${esc(t.category || "—")}</td>
+          <td data-c="paid" data-label="Paid via">${esc(t.paidVia || "—")}</td>
+          <td data-c="start" class="hint" data-label="Start" style="white-space:nowrap">${esc(fmtMonth(t.startMonth))}${t.active === false ? " · paused" : ""}</td>
+          <td data-c="end" data-label="End"><input type="month" class="cellin recEnd" data-id="${t.id}" value="${t.endMonth || ""}" style="width:150px"></td>
+          <td data-c="act" class="right"><button class="btn sm secondary recToggle" data-id="${t.id}">${t.active === false ? "Resume" : "Pause"}</button> <button class="icon-btn recDel" data-id="${t.id}" title="Delete">${icon("trash",16)}</button></td>
         </tr>`).join("")}
       </tbody></table></div>` : `<div class="hint mt">No fixed monthly expenses yet — add one above.</div>`}
     </div>`;
@@ -1001,7 +1001,7 @@ function renderReview(rows, problems) {
       <span class="hint" id="revCounts"></span>
     </div>
     <div class="table-wrap mt">
-      <table class="data">
+      <table class="data tbl-rev">
         <thead><tr>
           <th style="width:26px"></th><th>Date</th><th>Description</th>
           <th class="amount">Amount</th><th>Cur</th><th>Type</th><th>Category</th><th>Source</th><th>Review</th>
@@ -1102,15 +1102,15 @@ function updateRevCounts() {
 function reviewRowHtml(r, i) {
   const cats = catOptionsHtml(r.category);
   return `<tr class="${r.needsReview ? "revneeds" : ""}">
-    <td><input type="checkbox" class="revChk" data-i="${i}" ${r._sel ? "checked" : ""}></td>
-    <td class="revdate" data-i="${i}" title="Click to edit" style="white-space:nowrap;cursor:pointer"><span style="border-bottom:1px dotted var(--border)">${fmtDate(r.date)}</span></td>
-    <td><input class="cellin" data-i="${i}" data-f="description" value="${esc(r.description)}" style="min-width:200px"></td>
-    <td class="amount"><input type="number" step="0.01" class="cellin amt" data-i="${i}" data-f="amount" value="${r.amount}" style="width:96px"></td>
-    <td>${esc(r.currency || "?")}</td>
-    <td><select class="cellin" data-i="${i}" data-f="kind" style="min-width:104px"><option value="expense" ${r.kind !== "credit" ? "selected" : ""}>Expense</option><option value="credit" ${r.kind === "credit" ? "selected" : ""}>Credit</option></select></td>
-    <td><select class="cellin" data-i="${i}" data-f="category">${cats}</select></td>
-    <td class="hint" style="white-space:nowrap">${esc(r.card || "")}</td>
-    <td>${r.needsReview ? `<span class="chip warn" title="${esc(r.reviewReason || "Check this row")}">review</span>` : `<span class="hint">ok</span>`}</td>
+    <td data-c="sel"><input type="checkbox" class="revChk" data-i="${i}" ${r._sel ? "checked" : ""}></td>
+    <td data-c="date" class="revdate" data-i="${i}" data-label="Date" title="Click to edit" style="white-space:nowrap;cursor:pointer"><span style="border-bottom:1px dotted var(--border)">${fmtDate(r.date)}</span></td>
+    <td data-c="desc"><input class="cellin" data-i="${i}" data-f="description" value="${esc(r.description)}" style="min-width:200px"></td>
+    <td data-c="amt" class="amount" data-label="Amount"><input type="number" step="0.01" class="cellin amt" data-i="${i}" data-f="amount" value="${r.amount}" style="width:96px"></td>
+    <td data-c="cur" data-label="Currency">${esc(r.currency || "?")}</td>
+    <td data-c="kind" data-label="Type"><select class="cellin" data-i="${i}" data-f="kind" style="min-width:104px"><option value="expense" ${r.kind !== "credit" ? "selected" : ""}>Expense</option><option value="credit" ${r.kind === "credit" ? "selected" : ""}>Credit</option></select></td>
+    <td data-c="cat" data-label="Category"><select class="cellin" data-i="${i}" data-f="category">${cats}</select></td>
+    <td data-c="src" class="hint" data-label="Source" style="white-space:nowrap">${esc(r.card || "")}</td>
+    <td data-c="rev" data-label="Review">${r.needsReview ? `<span class="chip warn" title="${esc(r.reviewReason || "Check this row")}">review</span>` : `<span class="hint">ok</span>`}</td>
   </tr>`;
 }
 

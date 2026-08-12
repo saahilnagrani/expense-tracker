@@ -15,6 +15,26 @@ let _accessToken = null;
 let _tokenExpiry = 0;
 let _gisLoaded = null;
 
+// Persist the short-lived access token so a page refresh within its ~1h life
+// doesn't need any Google round-trip (no popup, no account picker, instant
+// reconnect). It's a single-user personal PWA on the user's own device, the
+// same threat model under which PDF passwords are already stored locally.
+const TOKEN_KEY = "et_gtoken";
+function persistToken() {
+  try { localStorage.setItem(TOKEN_KEY, JSON.stringify({ t: _accessToken, e: _tokenExpiry })); } catch {}
+}
+function clearToken() {
+  _accessToken = null;
+  _tokenExpiry = 0;
+  try { localStorage.removeItem(TOKEN_KEY); } catch {}
+}
+(function restoreToken() {
+  try {
+    const { t, e } = JSON.parse(localStorage.getItem(TOKEN_KEY) || "null") || {};
+    if (t && e && Date.now() < e - 5000) { _accessToken = t; _tokenExpiry = e; }
+  } catch {}
+})();
+
 function loadGis() {
   if (_gisLoaded) return _gisLoaded;
   _gisLoaded = new Promise((resolve, reject) => {
@@ -55,6 +75,7 @@ export async function connect(clientId, hint) {
           if (resp.error) return reject(new Error(resp.error_description || resp.error));
           _accessToken = resp.access_token;
           _tokenExpiry = Date.now() + (resp.expires_in ? resp.expires_in * 1000 : 3600 * 1000);
+          persistToken();
           resolve(true);
         },
       });
@@ -75,6 +96,9 @@ export async function getProfileEmail() {
 // session. Resolves true if a token was obtained, false otherwise.
 export async function silentConnect(clientId, hint) {
   if (!clientId) return false;
+  // A token persisted from a previous load may still be valid — reuse it and
+  // skip Google entirely (this is the common refresh-within-the-hour case).
+  if (isSignedIn()) return true;
   try { await loadGis(); } catch { return false; }
   return new Promise((resolve) => {
     let done = false;
@@ -88,12 +112,17 @@ export async function silentConnect(clientId, hint) {
           if (resp && resp.access_token) {
             _accessToken = resp.access_token;
             _tokenExpiry = Date.now() + (resp.expires_in ? resp.expires_in * 1000 : 3600 * 1000);
+            persistToken();
             finish(true);
           } else finish(false);
         },
         error_callback: () => finish(false),
       });
-      _tokenClient.requestAccessToken({ prompt: "" }); // silent
+      // prompt:"none" is the only value that guarantees no UI: it returns a
+      // token silently when the Google session + prior grant are still good,
+      // and errors quietly otherwise. (prompt:"" would pop the account picker
+      // once the session lapses — the "asked to pick my account again" bug.)
+      _tokenClient.requestAccessToken({ prompt: "none" });
       setTimeout(() => finish(false), 6000); // give up quietly
     } catch { finish(false); }
   });
@@ -103,8 +132,7 @@ export function disconnect() {
   if (_accessToken && window.google) {
     try { google.accounts.oauth2.revoke(_accessToken, () => {}); } catch {}
   }
-  _accessToken = null;
-  _tokenExpiry = 0;
+  clearToken();
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -135,7 +163,7 @@ async function api(path, { tries = 4, timeoutMs = 30000 } = {}) {
     }
     clearTimeout(timer);
     if (res.status === 401) {
-      _accessToken = null;
+      clearToken();
       throw new Error("Gmail session expired. Please connect again.");
     }
     if ([429, 500, 502, 503, 504].includes(res.status) && attempt < tries - 1) {
