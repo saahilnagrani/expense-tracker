@@ -163,6 +163,31 @@ function migrateCategoryList() {
   markPrefsChanged();
 }
 
+// Retroactively re-file forex fees + GST already saved: run the same linking
+// over stored expenses (grouped by card, scoped by the 0–2 day windows), and
+// move any fee still sitting in "Fees & Interest" into its purchase's current
+// category. Only fee rows are touched; purchases and manual edits are left be.
+async function reapplyFeeAttribution() {
+  if (!confirm("Re-file foreign-currency fees and GST on your saved transactions under the purchase they belong to?\n\nOnly fees currently in \"Fees & Interest\" are moved; nothing else changes.")) return;
+  const clones = expenses.map((e) => ({ ...e }));
+  linkFeesToPurchases(clones, true, { flag: false });
+  const changed = [];
+  for (let i = 0; i < clones.length; i++) {
+    const before = expenses[i], after = clones[i];
+    if (after.category !== before.category &&
+        (before.category === "Fees & Interest" || !before.category) &&
+        after.category && after.category !== "Fees & Interest") {
+      changed.push({ ...before, category: after.category, updatedAt: Date.now() });
+    }
+  }
+  if (!changed.length) { toast("No fees needed re-filing", "ok"); return; }
+  await putMany(changed);
+  expenses = await allExpenses();
+  scheduleSync();
+  renderSettings();
+  toast(`Re-filed ${changed.length} fee/GST transaction(s) ✓`, "ok");
+}
+
 // ---- Recurring monthly expenses ----
 // Materialize a real expense for every month from each template's start month
 // up to the current month. IDs are deterministic (recur_<tpl>_<YYYY-MM>) so
@@ -924,6 +949,8 @@ function renderSettings() {
           <input type="checkbox" id="attrFees" ${settings.attributeFees !== false ? "checked" : ""}>
           <span>Attribute forex fees &amp; GST to the original purchase's category<br><span class="hint">A foreign-currency fee (and its GST) is filed under the purchase it was charged on, instead of Fees &amp; Interest. Ambiguous ones are left in Fees &amp; Interest and flagged for review.</span></span>
         </label>
+        <div class="flex mt"><button class="btn sm secondary" id="reFees">Re-file saved forex fees now</button>
+          <span class="hint">Applies the above to transactions you've already imported.</span></div>
       </div>
       <div class="card">
         <div class="section-title">Data</div>
@@ -958,6 +985,7 @@ function renderSettings() {
     toast(`Re-categorized ${updated.length} transaction(s)`, updated.length ? "ok" : "");
     renderSettings();
   });
+  $("#reFees")?.addEventListener("click", reapplyFeeAttribution);
   $$(".catDel").forEach((b) => b.addEventListener("click", () => {
     settings.categories = settings.categories.filter((c) => c !== b.dataset.c); renderSettings();
   }));
