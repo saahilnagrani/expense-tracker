@@ -60,7 +60,7 @@ export const CATEGORY_RULES = [
   [/dubai world trade cent(er|re)|nypd typing/i, "Visa Fees"],
 
   // Food delivery (before Groceries / generic Careem, Noon)
-  [/careem food|talabat|noon food|keeta|deliveroo|hardees?|uber ?eats/i, "Food Delivery"],
+  [/careem food|talabat|noon food|keeta|deliveroo|hardees?|uber ?eats|swiggy/i, "Food Delivery"],
 
   // Groceries (specific merchants before generic Amazon/Noon → Shopping)
   [/amazon ?now|amazonufg|maf hyper|waitrose|sainsbury|tesco|asda|\bm&s\b|marks ?& ?spencer|careem deliveries|careem quik|al ain food|noon minutes|%\s?arabica|lulu|carrefour|spinneys|grocer|bigbasket|blinkit|zepto|instashop|supermarket/i, "Groceries"],
@@ -75,7 +75,7 @@ export const CATEGORY_RULES = [
   [/\bvfs\b|emirates|etihad|air ?india|air ?arabia|wizz ?air|indigo|flight|hotel|booking\.com|airbnb|makemytrip|kiwi/i, "Travel"],
 
   // Bills & utilities
-  [/e&\s?digital|etisalat|tasleem|addc|auh gas|\bdu bill\b|\bdewa\b|electricity|water|internet|mobile|recharge/i, "Bills & Utilities"],
+  [/e&\s?digital|etisalat|tasleem|addc|auh gas|\bdu bill\b|\bdewa\b|myjio|\bjio\b|electricity|water|internet|mobile|recharge/i, "Bills & Utilities"],
 
   // Subscriptions
   [/linkedin|apple\.com\/bill|itunes|netflix|spotify|prime|youtube|hotstar|disney|icloud|google one|openai|anthropic|claude|chatgpt|adobe|notion|canva/i, "Subscriptions"],
@@ -96,7 +96,7 @@ export const CATEGORY_RULES = [
   [/vox|cinema|pvr|bookmyshow|game|steam|playstation/i, "Entertainment"],
 
   // Fees (precise — avoid bare "fee" which would catch "coffee")
-  [/interest|finance charge|late fee|annual fee|foreign transaction fee|foreign exchange|service fee|markup|\bvat\b/i, "Fees & Interest"],
+  [/interest|finance charge|late fee|annual fee|foreign transaction fee|foreign currency transaction|foreign exchange|service fee|markup|\bvat\b|\bgst\b/i, "Fees & Interest"],
 
   // Cash / transfers
   [/\batm\b|cash withdrawal|neft|imps|\bupi\b|transfer/i, "Cash & Transfers"],
