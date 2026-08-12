@@ -1034,6 +1034,13 @@ function renderSettings() {
           <button class="btn danger" id="wipe">Delete all data</button>
         </div>
         <div class="hint mt">${expenses.length} transactions stored.</div>
+        <div class="section-title mt" style="border-top:1px solid var(--border);padding-top:14px">Rename a card</div>
+        <p class="hint">Relabel every transaction on one card (e.g. "Axis Credit Card" → "Axis Magnus Credit Card").</p>
+        <div class="row">
+          <div class="field"><label>From</label><select id="cardFrom"><option value="">Pick a card…</option>${[...new Set(expenses.map((e) => e.card).filter(Boolean))].sort().map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+          <div class="field"><label>To</label><input id="cardTo" placeholder="New card name"></div>
+        </div>
+        <div class="flex mt"><button class="btn sm secondary" id="cardRename">Rename card</button></div>
       </div>
     </div>
     <div class="flex mt"><button class="btn" id="saveSet">Save settings</button><span id="setMsg" class="hint"></span></div>`;
@@ -1081,6 +1088,27 @@ function renderSettings() {
   $("#wipe").addEventListener("click", async () => {
     if (!confirm("Delete ALL transactions? This cannot be undone.")) return;
     await clearAll(); expenses = []; toast("All data deleted", "ok"); go("dashboard");
+  });
+  $("#cardRename")?.addEventListener("click", async () => {
+    const from = $("#cardFrom").value;
+    const to = $("#cardTo").value.trim();
+    if (!from || !to) return toast("Pick a card and enter a new name", "err");
+    if (from === to) return toast("New name is the same", "err");
+    const affected = expenses.filter((e) => e.card === from);
+    if (!affected.length) return toast("No transactions on that card", "err");
+    if (!confirm(`Rename "${from}" → "${to}" on ${affected.length} transaction(s)?`)) return;
+    // Update the card label and recompute the dedupe key so future imports of
+    // the same statements still de-duplicate against these rows.
+    const updated = affected.map((e) => {
+      const n = { ...e, card: to, updatedAt: Date.now() };
+      n.dedupeKey = dedupeKey(n);
+      return n;
+    });
+    await putMany(updated);
+    expenses = await allExpenses();
+    scheduleSync();
+    toast(`Renamed ${updated.length} transaction(s) ✓`, "ok");
+    renderSettings();
   });
   $("#spEnabled")?.addEventListener("change", (e) => {
     const on = e.target.checked;
