@@ -18,7 +18,7 @@ function closePop() {
   if (!openPop) return;
   openPop.el.remove();
   window.removeEventListener("scroll", onOuterScroll, true);
-  window.removeEventListener("resize", closePop);
+  window.removeEventListener("resize", onResize);
   openPop = null;
 }
 
@@ -81,11 +81,21 @@ function toggle(sel, btn) {
   if (left + el.offsetWidth > window.innerWidth - 8) left = Math.max(8, window.innerWidth - el.offsetWidth - 8);
   el.style.top = top + "px";
   el.style.left = left + "px";
-  openPop = { el, sel };
+  openPop = { el, sel, w: window.innerWidth };
   const s = el.querySelector(".cs-search");
-  if (s) { s.focus(); s.addEventListener("input", () => draw(s.value)); s.addEventListener("click", (e) => e.stopPropagation()); }
+  // Do NOT auto-focus the search on touch devices: it pops the on-screen
+  // keyboard, whose viewport resize used to close the popup instantly. Tapping
+  // the search field still focuses it when the user wants to type.
+  const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  if (s) { if (!coarse) s.focus(); s.addEventListener("input", () => draw(s.value)); s.addEventListener("click", (e) => e.stopPropagation()); }
   window.addEventListener("scroll", onOuterScroll, true);
-  window.addEventListener("resize", closePop);
+  window.addEventListener("resize", onResize);
+}
+
+// Close on orientation / real width change, but ignore height-only resizes
+// (the mobile keyboard shrinks height and must not close the dropdown).
+function onResize() {
+  if (openPop && window.innerWidth !== openPop.w) closePop();
 }
 
 export function initSelectEnhancer() {

@@ -13,6 +13,7 @@ import {
 } from "./parsers.js";
 import { esc } from "./dashboard.js";
 import { initSelectEnhancer } from "./selects.js";
+import { icon, hydrateIcons } from "./icons.js";
 
 let settings = loadSettings();
 let expenses = [];
@@ -116,6 +117,7 @@ async function boot() {
   await migrateRefundCategory();
   migrateCategoryList();
   updateBasePill();
+  hydrateIcons();
   initSelectEnhancer();
   document.querySelectorAll(".tab").forEach((t) =>
     t.addEventListener("click", () => go(t.dataset.view)));
@@ -520,7 +522,7 @@ function renderDashboard() {
 
 function emptyState() {
   return `<div class="card empty">
-    <div class="big">💸</div>
+    <div class="big">${icon("wallet",40)}</div>
     <h2>Let's track some expenses</h2>
     <p class="muted">Import credit-card statements from Gmail, or add your fixed monthly expenses (rent, house help, cook).</p>
     <div class="flex" style="justify-content:center;margin-top:14px">
@@ -568,7 +570,7 @@ function renderExpenses() {
         <select id="fmerchant" class="fsel" style="max-width:260px"><option value="">All merchants</option>${merchCounts.map(([m, n]) => `<option value="${esc(m)}" ${expFilter.merchant === m ? "selected" : ""}>${esc(m)} (${n})</option>`).join("")}</select>
         <button class="btn sm secondary" id="fclear">Clear</button>
         <span class="spacer"></span>
-        <button class="btn sm secondary" id="expCsv" title="Export CSV" aria-label="Export CSV">⭳ CSV</button>
+        <button class="btn sm secondary" id="expCsv" title="Export CSV" aria-label="Export CSV">${icon("download",15)} CSV</button>
       </div>
       <div class="hint mt" id="expCount"></div>
       <div class="table-wrap mt">
@@ -658,7 +660,7 @@ function rowHtml(e) {
     <td class="amount ${cls}">${e.kind === "credit" ? "+" : ""}${fmt(e.amount, e.currency)}</td>
     <td class="amount ${cls}">${base == null ? '<span class="chip" title="No FX rate for ' + e.currency + '">no rate</span>' : (e.kind === "credit" ? "+" : "") + fmtBase(base, settings)}</td>
     <td><span class="chip spend-${st.cls}" title="${esc(st.title)}">${st.txt}</span></td>
-    <td class="right"><button class="icon-btn del" data-id="${e.id}" title="Delete">🗑</button></td>
+    <td class="right"><button class="icon-btn del" data-id="${e.id}" title="Delete">${icon("trash",16)}</button></td>
   </tr>`;
 }
 function srcLabel(s) { return s === "manual" ? "manual" : s === "recurring" ? "recurring" : s === "alert" ? "alert" : "statement"; }
@@ -696,7 +698,7 @@ function renderAdd() {
           <td>${esc(t.paidVia || "—")}</td>
           <td class="hint" style="white-space:nowrap">${esc(fmtMonth(t.startMonth))}${t.active === false ? " · paused" : ""}</td>
           <td><input type="month" class="cellin recEnd" data-id="${t.id}" value="${t.endMonth || ""}" style="width:150px"></td>
-          <td class="right"><button class="btn sm secondary recToggle" data-id="${t.id}">${t.active === false ? "Resume" : "Pause"}</button> <button class="icon-btn recDel" data-id="${t.id}" title="Delete">🗑</button></td>
+          <td class="right"><button class="btn sm secondary recToggle" data-id="${t.id}">${t.active === false ? "Resume" : "Pause"}</button> <button class="icon-btn recDel" data-id="${t.id}" title="Delete">${icon("trash",16)}</button></td>
         </tr>`).join("")}
       </tbody></table></div>` : `<div class="hint mt">No fixed monthly expenses yet — add one above.</div>`}
     </div>`;
@@ -967,7 +969,7 @@ function renderReview(rows, problems) {
   if (!rows.length) {
     area.innerHTML = `<div class="card">
       ${problems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("") || ""}
-      <div class="empty"><div class="big">🔍</div><p class="muted">No transactions parsed. If you have statements, check that the PDF password is set in Settings.</p></div>
+      <div class="empty"><div class="big">${icon("search",40)}</div><p class="muted">No transactions parsed. If you have statements, check that the PDF password is set in Settings.</p></div>
     </div>`;
     return;
   }

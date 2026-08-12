@@ -1,7 +1,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Expense Tracker</title>
-<link rel="stylesheet" href="./assets/css/styles.css?v=58" />
+<link rel="stylesheet" href="./assets/css/styles.css?v=59" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💸</text></svg>" />
 
 <!-- Installable app (PWA) -->
@@ -15,13 +15,13 @@
 
 <div id="app">
   <header class="topbar">
-    <div class="brand">💸 <span>Expense Tracker</span></div>
+    <div class="brand"><span class="brand-ic" data-ic="wallet" data-ic-size="20"></span> <span>Expense Tracker</span></div>
     <nav class="tabs">
-      <button class="tab" data-view="dashboard"><span class="tab-ic">📊</span><span class="tab-tx">Dashboard</span></button>
-      <button class="tab" data-view="expenses"><span class="tab-ic">🧾</span><span class="tab-tx">Expenses</span></button>
-      <button class="tab" data-view="add"><span class="tab-ic">📅</span><span class="tab-tx">Fixed</span></button>
-      <button class="tab" data-view="import"><span class="tab-ic">📥</span><span class="tab-tx">Import</span></button>
-      <button class="tab" data-view="settings"><span class="tab-ic">⚙️</span><span class="tab-tx">Settings</span></button>
+      <button class="tab" data-view="dashboard"><span class="tab-ic" data-ic="dashboard"></span><span class="tab-tx">Dashboard</span></button>
+      <button class="tab" data-view="expenses"><span class="tab-ic" data-ic="expenses"></span><span class="tab-tx">Expenses</span></button>
+      <button class="tab" data-view="add"><span class="tab-ic" data-ic="fixed"></span><span class="tab-tx">Fixed</span></button>
+      <button class="tab" data-view="import"><span class="tab-ic" data-ic="import"></span><span class="tab-tx">Import</span></button>
+      <button class="tab" data-view="settings"><span class="tab-ic" data-ic="settings"></span><span class="tab-tx">Settings</span></button>
     </nav>
     <div class="base-pill" id="basePill" title="Base currency"></div>
   </header>
@@ -37,11 +37,11 @@
     <div class="modal-card">
       <div class="modal-head">
         <h3 id="modalTitle"></h3>
-        <button class="icon-btn" id="modalClose" aria-label="Close">✕</button>
+        <button class="icon-btn" id="modalClose" aria-label="Close" data-ic="x" data-ic-size="20"></button>
       </div>
       <div class="modal-body" id="modalBody"></div>
     </div>
   </div>
 </div>
 
-<script type="module" src="./assets/js/app.js?v=58"></script>
+<script type="module" src="./assets/js/app.js?v=59"></script>
