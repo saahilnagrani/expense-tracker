@@ -225,8 +225,9 @@ function addReason(existing, reason) {
   return existing ? `${existing}; ${reason}` : reason;
 }
 
-export function linkFeesToPurchases(rows, enabled) {
+export function linkFeesToPurchases(rows, enabled, opts = {}) {
   if (!enabled) return rows;
+  const flag = opts.flag !== false; // set needsReview on ambiguous ones (import)
   // Only match within the same card (add-on cards are separate people).
   const groups = new Map();
   for (const r of rows) {
@@ -234,11 +235,11 @@ export function linkFeesToPurchases(rows, enabled) {
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(r);
   }
-  for (const g of groups.values()) linkGroup(g);
+  for (const g of groups.values()) linkGroup(g, flag);
   return rows;
 }
 
-function linkGroup(rows) {
+function linkGroup(rows, flag = true) {
   const feeIdx = [], gstIdx = [], purch = [];
   rows.forEach((r, i) => {
     const d = (r.description || "").trim();
@@ -286,7 +287,7 @@ function linkGroup(rows) {
   for (const fi of remaining) {
     let c = candidates(fi, lo, hi);
     if (c.length === 1) { feeParent[fi] = c[0]; continue; }
-    if (c.length > 1) {
+    if (c.length > 1 && flag) {
       rows[fi].needsReview = true;
       rows[fi].reviewReason = addReason(rows[fi].reviewReason, "Forex fee: multiple possible purchases — set the category manually");
     }
@@ -307,6 +308,6 @@ function linkGroup(rows) {
     if (!cands.length) continue;
     const cats = new Set(cands.map((fi) => rows[fi].category));
     if (cats.size === 1) gst.category = rows[cands[0]].category;
-    else { gst.needsReview = true; gst.reviewReason = addReason(gst.reviewReason, "GST: multiple possible forex fees — set the category manually"); }
+    else if (flag) { gst.needsReview = true; gst.reviewReason = addReason(gst.reviewReason, "GST: multiple possible forex fees — set the category manually"); }
   }
 }
