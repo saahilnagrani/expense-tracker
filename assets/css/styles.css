@@ -460,24 +460,40 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
   }
   .tbl-exp td[data-c="date"] { grid-area: date; color: var(--muted); font-size: 12.5px; }
   .tbl-exp td[data-c="del"]  { grid-area: del; justify-self: end; }
-  .tbl-exp td[data-c="cat"] .cs-btn { min-height: 34px; padding: 5px 10px; }
+  /* keep right padding so the label doesn't run under the chevron */
+  .tbl-exp td[data-c="cat"] .cs-btn { min-height: 34px; padding: 5px 28px 5px 10px; }
 
-  /* ---- Fixed + Import: label : value cards ---- */
-  .data.tbl-fixed td, .tbl-rev td[data-c]:not([data-c="sel"]):not([data-c="desc"]) {
+  /* ---- Import review: label : value rows ---- */
+  .tbl-rev td[data-c]:not([data-c="sel"]):not([data-c="desc"]) {
     display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0;
   }
-  .tbl-fixed td[data-label]::before,
   .tbl-rev td[data-label]::before {
     content: attr(data-label); color: var(--muted); font-size: 12.5px; font-weight: 600; flex: none;
   }
-  .tbl-fixed td[data-c="desc"] {
-    display: block; font-weight: 700; font-size: 15px;
-    border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 4px;
+
+  /* ---- Fixed monthly: compact 2-column info card (label above value) ---- */
+  .tbl-fixed tbody tr {
+    display: grid; grid-template-columns: 1fr 1fr; column-gap: 14px; row-gap: 11px;
   }
+  .data.tbl-fixed td {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0; text-align: left;
+  }
+  .tbl-fixed td[data-label]::before {
+    content: attr(data-label); color: var(--muted); font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .tbl-fixed td[data-c="desc"]  { grid-column: 1 / -1; font-weight: 700; font-size: 15.5px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+  .tbl-fixed td[data-c="amt"]   { grid-column: 1; font-weight: 600; }
+  .tbl-fixed td[data-c="day"]   { grid-column: 2; }
+  .tbl-fixed td[data-c="cat"]   { grid-column: 1; }
+  .tbl-fixed td[data-c="paid"]  { grid-column: 2; }
+  .tbl-fixed td[data-c="start"] { grid-column: 1; }
+  .tbl-fixed td[data-c="end"]   { grid-column: 2; }
+  .tbl-fixed td[data-c="end"] input { width: 100%; max-width: 170px; }
   .tbl-fixed td[data-c="act"] {
-    justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px;
+    grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; align-items: center; gap: 8px;
+    border-top: 1px solid var(--border); padding-top: 10px;
   }
-  .tbl-fixed td[data-c="end"] input { width: 150px; }
 
   /* ---- Import review: checkbox + description header, then labelled fields ---- */
   .tbl-rev tbody tr {
