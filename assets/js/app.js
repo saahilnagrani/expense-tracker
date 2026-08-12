@@ -204,16 +204,23 @@ function recheckCategories() {
     }
   }
   if (!changes.length) { toast("All categories already match the rules ✓", "ok"); return; }
-  const rowsHtml = changes.slice(0, 500).map((c) =>
-    `<tr><td>${esc(c.desc)}</td><td class="hint" style="white-space:nowrap">${esc(c.card || "")}</td><td class="hint">${esc(c.from)}</td><td>→</td><td><b>${esc(c.to)}</b></td></tr>`).join("");
-  openModal(`Re-check categories — ${changes.length} change(s)`, `
-    <p class="hint">These saved transactions would be re-categorized to match the current rules${settings.attributeFees !== false ? " (including forex-fee attribution)" : ""}. Amounts are unchanged. Merchants no rule matches keep their current category.</p>
-    <div class="table-wrap" style="max-height:52vh;overflow:auto"><table class="data"><thead><tr><th>Description</th><th>Card</th><th>From</th><th></th><th>To</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
-    ${changes.length > 500 ? `<p class="hint">Showing the first 500 of ${changes.length}.</p>` : ""}
-    <div class="flex mt" style="justify-content:flex-end;gap:8px"><button class="btn secondary" id="rcCancel">Cancel</button><button class="btn" id="rcApply">Apply ${changes.length} change(s)</button></div>`);
+  const rowsHtml = changes.map((c, i) =>
+    `<tr><td><input type="checkbox" class="chgChk" data-i="${i}" checked></td><td>${esc(c.desc)}</td><td class="hint" style="white-space:nowrap">${esc(c.card || "")}</td><td class="hint">${esc(c.from)}</td><td>→</td><td><b>${esc(c.to)}</b></td></tr>`).join("");
+  openModal(`Re-check categories — ${changes.length} proposed`, `
+    <p class="hint">Tick only the changes you want. A rule can misread a noisy description, so review before applying. Amounts never change; merchants no rule matches are left alone.</p>
+    <div class="flex" style="gap:8px"><button class="btn sm secondary" id="chgAll">Select all</button><button class="btn sm secondary" id="chgNone">Deselect all</button><span class="spacer"></span><span class="hint" id="chgCount"></span></div>
+    <div class="table-wrap mt" style="max-height:50vh;overflow:auto"><table class="data"><thead><tr><th style="width:26px"></th><th>Description</th><th>Card</th><th>From</th><th></th><th>To</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
+    <div class="flex mt" style="justify-content:flex-end;gap:8px"><button class="btn secondary" id="rcCancel">Cancel</button><button class="btn" id="rcApply">Apply selected</button></div>`);
+  const updateCount = () => { const n = $$(".chgChk").filter((x) => x.checked).length; const el = $("#chgCount"); if (el) el.textContent = `${n} of ${changes.length} selected`; };
+  $$(".chgChk").forEach((c) => c.addEventListener("change", updateCount));
+  $("#chgAll").addEventListener("click", () => { $$(".chgChk").forEach((x) => (x.checked = true)); updateCount(); });
+  $("#chgNone").addEventListener("click", () => { $$(".chgChk").forEach((x) => (x.checked = false)); updateCount(); });
+  updateCount();
   $("#rcCancel").addEventListener("click", closeModal);
   $("#rcApply").addEventListener("click", async () => {
-    const byId = new Map(changes.map((c) => [c.id, c.newCat]));
+    const pick = new Set($$(".chgChk").filter((x) => x.checked).map((x) => +x.dataset.i));
+    const byId = new Map(changes.filter((_, i) => pick.has(i)).map((c) => [c.id, c.newCat]));
+    if (!byId.size) { toast("Nothing selected", "err"); return; }
     const updated = expenses.filter((e) => byId.has(e.id))
       .map((e) => ({ ...e, category: byId.get(e.id), updatedAt: Date.now() }));
     await putMany(updated);
