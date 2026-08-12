@@ -4,8 +4,9 @@
 //   - Deletions are tracked as tombstones { id: deletedAt }. A tombstone wins
 //     over a record only if it's newer than that record's updatedAt, so an
 //     edit on device B after a delete on device A is preserved.
-//   - Prefs (base currency, FX rates, categories) sync as one blob with its
-//     own last-write-wins timestamp. Passwords and the Google Client ID stay
+//   - Prefs (base currency, FX rates, categories, recurring, and the
+//     non-secret household name/label/toggle) sync as one blob with its own
+//     last-write-wins timestamp. PDF passwords and the Google Client ID stay
 //     local to each device and are never uploaded.
 
 import {
@@ -48,6 +49,13 @@ export async function syncNow() {
   const localPrefs = {
     baseCurrency: settings.baseCurrency, rates: settings.rates, categories: settings.categories,
     recurring: settings.recurring || [],
+    // Household settings are not secret (a name tag + a Gmail label), so sync
+    // them too. The Client ID stays device-local (you need it to connect before
+    // any sync can run, so syncing it adds nothing).
+    spouseEnabled: settings.spouseEnabled, spouseName: settings.spouseName, spouseLabel: settings.spouseLabel,
+    // PDF passwords sync too (opted in): they ride in the same private Drive
+    // appDataFolder file, readable only by this app on the user's account.
+    passwords: settings.passwords || {}, spousePasswords: settings.spousePasswords || {},
   };
   let prefs = localPrefs, prefsUpdatedAt = localPrefsAt;
   if ((remote.prefsUpdatedAt || 0) > localPrefsAt) {
@@ -65,6 +73,13 @@ export async function syncNow() {
     s.rates = { ...s.rates, ...(prefs.rates || {}) };
     s.categories = prefs.categories && prefs.categories.length ? prefs.categories : s.categories;
     if (prefs.recurring) s.recurring = prefs.recurring;
+    if (prefs.spouseEnabled !== undefined) s.spouseEnabled = prefs.spouseEnabled;
+    if (prefs.spouseName !== undefined) s.spouseName = prefs.spouseName;
+    if (prefs.spouseLabel !== undefined) s.spouseLabel = prefs.spouseLabel;
+    // Union password maps so a password entered on either device survives; the
+    // newer prefs blob wins for any bank present on both.
+    if (prefs.passwords) s.passwords = { ...s.passwords, ...prefs.passwords };
+    if (prefs.spousePasswords) s.spousePasswords = { ...(s.spousePasswords || {}), ...prefs.spousePasswords };
     saveSettings(s);
   }
   await setMeta("prefsUpdatedAt", prefsUpdatedAt);

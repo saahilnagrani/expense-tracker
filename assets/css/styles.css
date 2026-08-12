@@ -58,9 +58,31 @@ a { color: var(--brand); }
 }
 .tab:hover { background: var(--chip); color: var(--text); }
 .tab.active { background: var(--brand); color: #fff; }
+.tab-ic { display: none; } /* icons only show in the mobile bottom tray */
 .base-pill {
   margin-left: auto; background: var(--chip); color: var(--muted);
   padding: 6px 12px; border-radius: 999px; font-weight: 600; font-size: 13px;
+}
+
+/* Mobile: move the tabs into a fixed bottom icon tray */
+@media (max-width: 640px) {
+  .topbar { padding: 10px 14px; gap: 10px; }
+  .tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 35;
+    background: var(--panel); border-top: 1px solid var(--border);
+    display: flex; justify-content: space-around; gap: 0; flex-wrap: nowrap;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -4px 16px rgba(0,0,0,.18);
+  }
+  .tab {
+    flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 6px 2px; border-radius: 12px; font-size: 11px; font-weight: 600; min-width: 0;
+  }
+  .tab-ic { display: block; font-size: 20px; line-height: 1; }
+  .tab-tx { font-size: 10.5px; line-height: 1; }
+  .tab:hover { background: transparent; color: var(--muted); }
+  .tab.active { background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); }
+  main { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
 }
 
 main { max-width: 1080px; margin: 0 auto; padding: 22px 20px 80px; }
