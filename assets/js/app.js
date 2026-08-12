@@ -724,13 +724,18 @@ async function fetchAndParse() {
       }
       for (const r of rows) {
         r.source = src.kind; r.bank = src.bank; r.owner = spec.owner;
-        r.card = spec.cardLabel; r.gmailMessageId = ids[i];
+        // Axis prints the product name (Magnus/Select) in the statement, so
+        // label each as its own card instead of a generic "Axis Credit Card".
+        const baseLabel = (src.bank === "axis-cc" && r.cardProduct)
+          ? spec.cardLabel.replace(/Axis Credit Card/i, `Axis ${r.cardProduct} Credit Card`)
+          : spec.cardLabel;
+        r.card = baseLabel; r.gmailMessageId = ids[i];
         // Add-on / secondary card on the same statement → tag it to that
         // cardholder (first name from the statement's section header).
         if (r.secondaryHolder) {
           const fn = (r.secondaryHolder.split(/\s+/)[0] || "");
           const nice = fn ? fn.charAt(0).toUpperCase() + fn.slice(1).toLowerCase() : "";
-          if (nice) { r.card = `${spec.cardLabel} (${nice})`; r.owner = "spouse"; }
+          if (nice) { r.card = `${baseLabel} (${nice})`; r.owner = "spouse"; }
         }
         r.category = r.category || guessCategory(r.description);
       }

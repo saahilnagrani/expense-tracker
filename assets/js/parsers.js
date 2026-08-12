@@ -153,6 +153,13 @@ export function parseStatementByBank(bank, lines, opts = {}) {
   // If the statement is split into per-card sections (primary + add-on cards),
   // flag transactions belonging to a cardholder other than the primary (first)
   // one so the app can tag them to that person.
+  // Axis emails several different credit cards (Magnus, Select, …) from one
+  // address; the product name is printed in the statement header. Detect it so
+  // each card can be tracked separately, like the ENBD Noon/Etihad split.
+  if (bank === "axis-cc") {
+    const product = detectAxisProduct(lines);
+    if (product) for (const r of rows) r.cardProduct = product;
+  }
   const primary = (rows.find((r) => r.cardHolder) || {}).cardHolder || null;
   if (primary) {
     for (const r of rows) {
@@ -179,6 +186,22 @@ function cleanWioRow(t) {
   if (WIO_CARD_PAYMENT.test(description)) out.category = "Card Payment";
   else if (/foreign exchange/i.test(description)) out.category = "Fees & Interest";
   return out;
+}
+
+// Pull the Axis card product ("Magnus", "Select", …) from a statement header
+// line like "Axis Bank Magnus Credit Card". Returns null if none is found.
+function detectAxisProduct(lines) {
+  for (const raw of lines.slice(0, 40)) {
+    const line = (raw || "").replace(/\s+/g, " ").trim();
+    const m = line.match(/axis bank\s+([A-Za-z][A-Za-z ]{1,20}?)\s+credit card/i);
+    if (m) {
+      const p = m[1].trim().replace(/\s+/g, " ");
+      if (p && !/^(the|your|a|my)$/i.test(p)) {
+        return p.replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\B\w/g, (c) => c.toLowerCase());
+      }
+    }
+  }
+  return null;
 }
 
 export function cleanMerchant(s) {
