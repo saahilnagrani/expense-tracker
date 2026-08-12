@@ -701,6 +701,7 @@ function renderExpenses() {
         <button class="btn sm secondary" id="expCsv" title="Export CSV" aria-label="Export CSV">${icon("download",15)} CSV</button>
       </div>
       <div class="hint mt" id="expCount"></div>
+      <div id="expPagerTop" class="flex mt pager" style="align-items:center;gap:10px"></div>
       <div class="table-wrap mt">
         <table class="data tbl-exp">
           <thead><tr>
@@ -710,7 +711,7 @@ function renderExpenses() {
           <tbody id="expBody"></tbody>
         </table>
       </div>
-      <div id="expPager" class="flex mt" style="align-items:center;gap:10px"></div>
+      <div id="expPager" class="flex mt pager" style="align-items:center;gap:10px"></div>
     </div>`;
 
   const paintExp = () => {
@@ -722,12 +723,24 @@ function renderExpenses() {
     const pageRows = filtered.slice(expPage * EXP_PAGE, expPage * EXP_PAGE + EXP_PAGE);
     $("#expCount").innerHTML = `${filtered.length} transaction(s) · spend total ${fmtBase(totalBase, settings)}`;
     $("#expBody").innerHTML = pageRows.map(rowHtml).join("") || `<tr><td colspan="8" class="hint" style="padding:24px">No matching transactions.</td></tr>`;
-    $("#expPager").innerHTML = pages > 1 ? `
-      <button class="btn sm secondary" id="expPrev" ${expPage === 0 ? "disabled" : ""}>‹ Prev</button>
+    // Same pager above and below the table, so you can page without scrolling
+    // to the far end of a 200-row page.
+    const pagerHtml = pages > 1 ? `
+      <button class="btn sm secondary expPrev" ${expPage === 0 ? "disabled" : ""}>‹ Prev</button>
       <span class="hint">Page ${expPage + 1} of ${pages} · rows ${expPage * EXP_PAGE + 1}–${Math.min(filtered.length, (expPage + 1) * EXP_PAGE)} of ${filtered.length}</span>
-      <button class="btn sm secondary" id="expNext" ${expPage >= pages - 1 ? "disabled" : ""}>Next ›</button>` : "";
-    $("#expPrev")?.addEventListener("click", () => { expPage--; paintExp(); });
-    $("#expNext")?.addEventListener("click", () => { expPage++; paintExp(); });
+      <button class="btn sm secondary expNext" ${expPage >= pages - 1 ? "disabled" : ""}>Next ›</button>` : "";
+    $("#expPager").innerHTML = pagerHtml;
+    $("#expPagerTop").innerHTML = pagerHtml;
+    // Land at the start of the new page — otherwise paging from the bottom
+    // pager drops you at the bottom of the next page.
+    const toListTop = () => {
+      const el = $("#expPagerTop");
+      if (!el) return;
+      const hdr = document.querySelector(".topbar")?.offsetHeight || 0;
+      window.scrollTo({ top: Math.max(0, window.scrollY + el.getBoundingClientRect().top - hdr - 10) });
+    };
+    $$(".expPrev").forEach((b) => b.addEventListener("click", () => { expPage--; paintExp(); toListTop(); }));
+    $$(".expNext").forEach((b) => b.addEventListener("click", () => { expPage++; paintExp(); toListTop(); }));
     $$(".catsel").forEach((sel) => sel.addEventListener("change", async (e) => {
       const exp = expenses.find((x) => x.id === e.target.dataset.id);
       if (!exp) return;
