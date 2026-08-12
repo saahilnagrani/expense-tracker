@@ -337,8 +337,14 @@ async function runSync(silent) {
   }
 }
 
-// ---------- Dashboard: period × category spend table ----------
+// ---------- Dashboard: period × category spend ----------
 let dashGran = "month"; // "week" | "month" | "year"
+let dashView = "table"; // "table" | "chart"
+let dashCats = null;     // null = all categories; else a Set of chosen ones
+// Categorical palette for the stacked bar chart (distinct, dark-friendly).
+const DASH_PALETTE = ["#4f8cff", "#37c98b", "#f6b73c", "#ef6f6c", "#a985f6", "#22b8cf",
+  "#f78fb3", "#8bc34a", "#ff9f5a", "#6ea8fe", "#c4a35a", "#e05fa8", "#5ad1c8", "#d6d64f",
+  "#9aa7b2", "#7bd88f", "#ff7a7a", "#b088ff", "#54c0e8", "#e6a24b"];
 
 function periodKey(dateStr, gran) {
   if (gran === "year") return dateStr.slice(0, 4);
@@ -377,14 +383,20 @@ function renderDashboard() {
   const cell = (v) => v ? num(v) : '<span class="muted">—</span>';
   const colLabel = dashGran === "year" ? "Year" : dashGran === "week" ? "Week" : "Month";
 
-  views.innerHTML = `
-    <div class="card">
-      <div class="flex" style="justify-content:space-between;align-items:center">
-        <div class="section-title" style="margin:0">Spend by category · ${settings.baseCurrency}</div>
-        <div class="pill-tabs" style="margin:0">
-          ${["week", "month", "year"].map((g) => `<button class="btn sm ${dashGran === g ? "" : "secondary"}" data-gran="${g}">${g[0].toUpperCase() + g.slice(1)}</button>`).join("")}
-        </div>
-      </div>
+  // Stable colour per category (assigned A–Z so it doesn't shift on toggles).
+  const colorMap = {};
+  [...cats].sort().forEach((c, i) => (colorMap[c] = DASH_PALETTE[i % DASH_PALETTE.length]));
+  const dashColor = (c) => colorMap[c] || "#8aa0b2";
+  const selected = dashCats === null ? new Set(cats) : dashCats;
+
+  const granTabs = ["week", "month", "year"].map((g) => `<button class="btn sm ${dashGran === g ? "" : "secondary"}" data-gran="${g}">${g[0].toUpperCase() + g.slice(1)}</button>`).join("");
+  const viewTabs = ["table", "chart"].map((v) => `<button class="btn sm ${dashView === v ? "" : "secondary"}" data-view2="${v}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("");
+  const header = `<div class="flex" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+    <div class="section-title" style="margin:0">Spend by category · ${settings.baseCurrency}</div>
+    <div class="flex" style="gap:8px"><div class="pill-tabs" style="margin:0">${granTabs}</div><div class="pill-tabs" style="margin:0">${viewTabs}</div></div>
+  </div>`;
+
+  const tableMarkup = () => `
       <div class="table-wrap dash-scroll mt">
         <table class="data pivot">
           <thead><tr>
@@ -404,11 +416,75 @@ function renderDashboard() {
             ${cats.map((c) => `<td class="amount"><b>${num(catTotals[c])}</b></td>`).join("")}
           </tr></tfoot>
         </table>
-      </div>
+      </div>`;
+
+  const niceMax = (v) => { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const n = v / p; const s = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10; return s * p; };
+  const fmtShort = (v) => Math.abs(v) >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1) + "k" : String(Math.round(v));
+
+  const barSvg = (pers, showCats, yMax) => {
+    const left = 52, right = 16, top = 14, bottom = 60, bandW = 46, barW = 28;
+    const plotW = pers.length * bandW, svgW = left + plotW + right, svgH = 340;
+    const plotBottom = svgH - bottom, plotTop = top, plotH = plotBottom - plotTop;
+    const y = (v) => plotBottom - (v / yMax) * plotH;
+    let g = "";
+    for (let k = 0; k <= 4; k++) {
+      const val = yMax * k / 4, gy = y(val);
+      g += `<line x1="${left}" y1="${gy}" x2="${svgW - right}" y2="${gy}" stroke="var(--border)" stroke-width="1"/>`;
+      g += `<text x="${left - 6}" y="${gy + 3}" text-anchor="end" font-size="10" fill="var(--muted)">${fmtShort(val)}</text>`;
+    }
+    pers.forEach((pk, i) => {
+      const bx = left + i * bandW + (bandW - barW) / 2;
+      let y0 = plotBottom;
+      for (const c of showCats) {
+        const val = Math.max(0, byPeriodCat[pk]?.[c] || 0);
+        if (val <= 0) continue;
+        const h = (val / yMax) * plotH, ry = y0 - h;
+        g += `<rect x="${bx}" y="${ry.toFixed(1)}" width="${barW}" height="${Math.max(0.5, h).toFixed(1)}" fill="${dashColor(c)}"><title>${esc(c)} · ${esc(pk)}: ${settings.baseCurrency} ${num(val)}</title></rect>`;
+        y0 = ry;
+      }
+      const lx = bx + barW / 2, ly = plotBottom + 12;
+      g += `<text x="${lx}" y="${ly}" transform="rotate(-40 ${lx} ${ly})" text-anchor="end" font-size="10" fill="var(--muted)">${esc(pk)}</text>`;
+    });
+    g += `<line x1="${left}" y1="${plotBottom}" x2="${svgW - right}" y2="${plotBottom}" stroke="var(--border)" stroke-width="1.5"/>`;
+    return `<svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" style="max-width:none;display:block">${g}</svg>`;
+  };
+
+  const chartMarkup = () => {
+    const cap = { week: 26, month: 24, year: 100 }[dashGran];
+    const pers = periods.slice().sort().slice(-cap); // ascending (oldest→newest), recent N
+    const showCats = cats.filter((c) => selected.has(c));
+    let maxStack = 0;
+    for (const pk of pers) { let s = 0; for (const c of showCats) s += Math.max(0, byPeriodCat[pk]?.[c] || 0); if (s > maxStack) maxStack = s; }
+    const yMax = niceMax(maxStack);
+    const chips = cats.map((c) => `<label class="chip" style="cursor:pointer;user-select:none"><input type="checkbox" class="dcat" value="${esc(c)}" ${selected.has(c) ? "checked" : ""} style="margin-right:6px"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${dashColor(c)};margin-right:5px;vertical-align:middle"></span>${esc(c)}</label>`).join("");
+    const chart = (showCats.length && pers.length)
+      ? `<div class="table-wrap mt">${barSvg(pers, showCats, yMax)}</div>`
+      : `<div class="empty" style="padding:30px"><p class="muted">Pick at least one category to chart.</p></div>`;
+    return `<div class="flex mt" style="gap:6px;flex-wrap:wrap;align-items:center">
+        <button class="btn sm secondary" id="catsAll">All</button>
+        <button class="btn sm secondary" id="catsNone">None</button>
+        ${chips}
+      </div>${chart}`;
+  };
+
+  views.innerHTML = `
+    <div class="card">
+      ${header}
+      ${dashView === "chart" ? chartMarkup() : tableMarkup()}
       <div class="hint mt">Net spend in ${settings.baseCurrency}: refunds and other credits reduce the total (kept in the merchant's category); only card-bill payments are excluded.</div>
     </div>`;
 
   $$("[data-gran]").forEach((b) => b.addEventListener("click", () => { dashGran = b.dataset.gran; renderDashboard(); }));
+  $$("[data-view2]").forEach((b) => b.addEventListener("click", () => { dashView = b.dataset.view2; renderDashboard(); }));
+  if (dashView === "chart") {
+    $("#catsAll")?.addEventListener("click", () => { dashCats = null; renderDashboard(); });
+    $("#catsNone")?.addEventListener("click", () => { dashCats = new Set(); renderDashboard(); });
+    $$(".dcat").forEach((chk) => chk.addEventListener("change", () => {
+      const cur = dashCats === null ? new Set(cats) : new Set(dashCats);
+      chk.checked ? cur.add(chk.value) : cur.delete(chk.value);
+      dashCats = cur; renderDashboard();
+    }));
+  }
 }
 
 function emptyState() {
