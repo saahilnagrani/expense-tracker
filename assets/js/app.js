@@ -12,6 +12,7 @@ import {
   parseStatementByBank, guessCategory, dedupeKey, linkFeesToPurchases,
 } from "./parsers.js";
 import { esc } from "./dashboard.js";
+import { initSelectEnhancer } from "./selects.js";
 
 let settings = loadSettings();
 let expenses = [];
@@ -115,6 +116,7 @@ async function boot() {
   await migrateRefundCategory();
   migrateCategoryList();
   updateBasePill();
+  initSelectEnhancer();
   document.querySelectorAll(".tab").forEach((t) =>
     t.addEventListener("click", () => go(t.dataset.view)));
   $("#modalClose").addEventListener("click", closeModal);
@@ -545,7 +547,7 @@ function renderExpenses() {
   const catCounts = countBy((e) => e.category || "Uncategorized");
   const merchCounts = countBy((e) => e.description || "—");
 
-  const filtered = expenses.filter((e) => {
+  const computeFiltered = () => expenses.filter((e) => {
     if (expFilter.q && !(`${e.description} ${e.card}`.toLowerCase().includes(expFilter.q.toLowerCase()))) return false;
     if (expFilter.month && e.date.slice(0, 7) !== expFilter.month) return false;
     if (expFilter.card && e.card !== expFilter.card) return false;
@@ -553,17 +555,14 @@ function renderExpenses() {
     if (expFilter.merchant && (e.description || "—") !== expFilter.merchant) return false;
     return true;
   });
-  const totalBase = filtered.reduce((a, e) => a + (spendBase(e) || 0), 0);
-  const pages = Math.max(1, Math.ceil(filtered.length / EXP_PAGE));
-  if (expPage >= pages) expPage = pages - 1;
-  if (expPage < 0) expPage = 0;
-  const pageRows = filtered.slice(expPage * EXP_PAGE, expPage * EXP_PAGE + EXP_PAGE);
 
+  // Shell (filters) is rendered once; only the table body/count/pager repaint
+  // on search/filter, so the search input keeps focus while you type.
   views.innerHTML = `
     <div class="card">
       <div class="flex">
         <input id="fq" placeholder="Search merchant / card…" value="${esc(expFilter.q)}" style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)">
-        <select id="fmonth" class="fsel"><option value="">All months</option>${months.map((m) => `<option ${expFilter.month === m ? "selected" : ""}>${m}</option>`).join("")}</select>
+        <select id="fmonth" class="fsel"><option value="">All months</option>${months.map((m) => `<option value="${m}" ${expFilter.month === m ? "selected" : ""}>${fmtMonth(m)}</option>`).join("")}</select>
         <select id="fcard" class="fsel"><option value="">All cards</option>${cards.map((c) => `<option ${expFilter.card === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
         <select id="fcat" class="fsel"><option value="">All categories</option>${catCounts.map(([c, n]) => `<option value="${esc(c)}" ${expFilter.cat === c ? "selected" : ""}>${esc(c)} (${n})</option>`).join("")}</select>
         <select id="fmerchant" class="fsel" style="max-width:260px"><option value="">All merchants</option>${merchCounts.map(([m, n]) => `<option value="${esc(m)}" ${expFilter.merchant === m ? "selected" : ""}>${esc(m)} (${n})</option>`).join("")}</select>
@@ -571,56 +570,67 @@ function renderExpenses() {
         <span class="spacer"></span>
         <button class="btn sm" id="expCsv">Export CSV</button>
       </div>
-      <div class="hint mt">${filtered.length} transaction(s) · spend total ${fmtBase(totalBase, settings)}</div>
+      <div class="hint mt" id="expCount"></div>
       <div class="table-wrap mt">
         <table class="data">
           <thead><tr>
             <th>Date</th><th>Description</th><th>Category</th><th>Card / Source</th>
             <th class="amount">Amount</th><th class="amount">In ${settings.baseCurrency}</th><th>Spend</th><th></th>
           </tr></thead>
-          <tbody>${pageRows.map(rowHtml).join("") || `<tr><td colspan="8" class="hint" style="padding:24px">No matching transactions.</td></tr>`}</tbody>
+          <tbody id="expBody"></tbody>
         </table>
       </div>
-      ${pages > 1 ? `<div class="flex mt" style="align-items:center;gap:10px">
-        <button class="btn sm secondary" id="expPrev" ${expPage === 0 ? "disabled" : ""}>‹ Prev</button>
-        <span class="hint">Page ${expPage + 1} of ${pages} · rows ${expPage * EXP_PAGE + 1}–${Math.min(filtered.length, (expPage + 1) * EXP_PAGE)} of ${filtered.length}</span>
-        <button class="btn sm secondary" id="expNext" ${expPage >= pages - 1 ? "disabled" : ""}>Next ›</button>
-      </div>` : ""}
+      <div id="expPager" class="flex mt" style="align-items:center;gap:10px"></div>
     </div>`;
 
-  $("#expPrev")?.addEventListener("click", () => { expPage--; renderExpenses(); });
-  $("#expNext")?.addEventListener("click", () => { expPage++; renderExpenses(); });
-  $("#fq").addEventListener("input", (e) => { expFilter.q = e.target.value; expPage = 0; debouncedExp(); });
+  const paintExp = () => {
+    const filtered = computeFiltered();
+    const totalBase = filtered.reduce((a, e) => a + (spendBase(e) || 0), 0);
+    const pages = Math.max(1, Math.ceil(filtered.length / EXP_PAGE));
+    if (expPage >= pages) expPage = pages - 1;
+    if (expPage < 0) expPage = 0;
+    const pageRows = filtered.slice(expPage * EXP_PAGE, expPage * EXP_PAGE + EXP_PAGE);
+    $("#expCount").innerHTML = `${filtered.length} transaction(s) · spend total ${fmtBase(totalBase, settings)}`;
+    $("#expBody").innerHTML = pageRows.map(rowHtml).join("") || `<tr><td colspan="8" class="hint" style="padding:24px">No matching transactions.</td></tr>`;
+    $("#expPager").innerHTML = pages > 1 ? `
+      <button class="btn sm secondary" id="expPrev" ${expPage === 0 ? "disabled" : ""}>‹ Prev</button>
+      <span class="hint">Page ${expPage + 1} of ${pages} · rows ${expPage * EXP_PAGE + 1}–${Math.min(filtered.length, (expPage + 1) * EXP_PAGE)} of ${filtered.length}</span>
+      <button class="btn sm secondary" id="expNext" ${expPage >= pages - 1 ? "disabled" : ""}>Next ›</button>` : "";
+    $("#expPrev")?.addEventListener("click", () => { expPage--; paintExp(); });
+    $("#expNext")?.addEventListener("click", () => { expPage++; paintExp(); });
+    $$(".catsel").forEach((sel) => sel.addEventListener("change", async (e) => {
+      const exp = expenses.find((x) => x.id === e.target.dataset.id);
+      if (!exp) return;
+      let val = e.target.value;
+      if (val === "__new__") {
+        const added = addCategory(window.prompt("New category name:"));
+        if (!added) { renderExpenses(); return; }
+        val = added;
+      }
+      exp.category = val; exp.updatedAt = Date.now(); await putExpense(exp); scheduleSync();
+      renderExpenses(); // full re-render so the new category shows everywhere
+      toast("Category updated", "ok");
+    }));
+    $$(".del").forEach((b) => b.addEventListener("click", async () => {
+      if (!confirm("Delete this transaction?")) return;
+      await deleteExpense(b.dataset.id);
+      await recordDeletion(b.dataset.id);
+      expenses = expenses.filter((x) => x.id !== b.dataset.id);
+      scheduleSync();
+      paintExp();
+    }));
+  };
+
+  $("#fq").addEventListener("input", (e) => { expFilter.q = e.target.value; expPage = 0; debouncedExp(paintExp); });
   ["fmonth", "fcard", "fcat", "fmerchant"].forEach((id) => $("#" + id).addEventListener("change", (e) => {
-    expFilter[id.slice(1)] = e.target.value; expPage = 0; renderExpenses();
+    expFilter[id.slice(1)] = e.target.value; expPage = 0; paintExp();
   }));
   $("#fclear").addEventListener("click", () => { expFilter = { q: "", month: "", card: "", cat: "", merchant: "" }; expPage = 0; renderExpenses(); });
-  $("#expCsv").addEventListener("click", () => exportCsv(filtered));
-  $$(".catsel").forEach((sel) => sel.addEventListener("change", async (e) => {
-    const exp = expenses.find((x) => x.id === e.target.dataset.id);
-    if (!exp) return;
-    let val = e.target.value;
-    if (val === "__new__") {
-      const added = addCategory(window.prompt("New category name:"));
-      if (!added) { renderExpenses(); return; }
-      val = added;
-    }
-    exp.category = val; exp.updatedAt = Date.now(); await putExpense(exp); scheduleSync();
-    renderExpenses(); // re-render so the new category shows in every dropdown
-    toast("Category updated", "ok");
-  }));
-  $$(".del").forEach((b) => b.addEventListener("click", async () => {
-    if (!confirm("Delete this transaction?")) return;
-    await deleteExpense(b.dataset.id);
-    await recordDeletion(b.dataset.id);
-    expenses = expenses.filter((x) => x.id !== b.dataset.id);
-    scheduleSync();
-    renderExpenses();
-  }));
-  // .fsel styled via CSS
+  $("#expCsv").addEventListener("click", () => exportCsv(computeFiltered()));
+  paintExp();
 }
 let _t;
-function debouncedExp() { clearTimeout(_t); _t = setTimeout(renderExpenses, 250); }
+function debouncedExp(fn) { clearTimeout(_t); _t = setTimeout(fn, 200); }
 
 // How a row affects the spend total, mirroring spendBase() exactly, so the
 // user can see at a glance what's counted and what isn't.
