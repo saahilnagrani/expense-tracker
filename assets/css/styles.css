@@ -504,6 +504,14 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
 .dcat-opt:has(input:focus-visible) { outline: 2px solid var(--brand); outline-offset: -2px; }
 @media (max-width: 640px) { .dcat-opt { padding: 11px 10px; font-size: 14.5px; } }
 
+/* Pager (Expenses list, above and below the table). Collapses entirely when
+   there's only one page so it costs no vertical space. */
+.pager:empty { display: none; }
+@media (max-width: 640px) {
+  .pager { justify-content: space-between; gap: 8px; flex-wrap: nowrap; }
+  .pager .hint { flex: 1; min-width: 0; text-align: center; font-size: 11.5px; }
+}
+
 /* ------------------------------------------------------------------ *
  * Mobile: turn the wide data tables into stacked cards (one card per
  * row) so nothing is cut off and there's no horizontal scroll. Desktop
