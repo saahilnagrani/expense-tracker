@@ -412,6 +412,30 @@ input[type="checkbox"] { accent-color: var(--brand); width: 16px; height: 16px; 
 /* Date input calendar icon tint in dark mode */
 input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: pointer; }
 
+/* Segmented control (dashboard Week/Month/Year and Table/Chart). One track
+   with connected segments — compact, and reads as a single either/or choice
+   rather than a row of independent buttons. */
+.seg {
+  display: inline-flex; align-items: center; gap: 2px; padding: 2px;
+  background: var(--chip); border: 1px solid var(--border); border-radius: 10px;
+}
+.seg > button {
+  appearance: none; border: 0; background: transparent; color: var(--muted);
+  font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1;
+  padding: 7px 11px; border-radius: 8px; cursor: pointer; white-space: nowrap;
+  transition: background .16s ease, color .16s ease;
+}
+.seg > button:hover { color: var(--text); }
+.seg > button.on { background: var(--brand); color: #fff; }
+.seg > button:active { transform: translateY(1px); }
+.seg > button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+@media (max-width: 640px) {
+  /* keep them compact on mobile too — the global .btn 42px min-height that
+     used to apply here is exactly what made these controls bulky */
+  .seg > button { padding: 8px 12px; font-size: 13px; }
+  .dash-head { gap: 8px; }
+}
+
 /* ------------------------------------------------------------------ *
  * Mobile: turn the wide data tables into stacked cards (one card per
  * row) so nothing is cut off and there's no horizontal scroll. Desktop
