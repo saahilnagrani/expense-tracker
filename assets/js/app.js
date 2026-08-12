@@ -405,11 +405,13 @@ function renderDashboard() {
   const dashColor = (c) => colorMap[c] || "#8aa0b2";
   const selected = dashCats === null ? new Set(cats) : dashCats;
 
-  const granTabs = ["week", "month", "year"].map((g) => `<button class="btn sm ${dashGran === g ? "" : "secondary"}" data-gran="${g}">${g[0].toUpperCase() + g.slice(1)}</button>`).join("");
-  const viewTabs = ["table", "chart"].map((v) => `<button class="btn sm ${dashView === v ? "" : "secondary"}" data-view2="${v}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("");
-  const header = `<div class="flex" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+  // Segmented controls: one connected track per choice, far more compact than
+  // a row of standalone pill buttons (and reads as a single either/or control).
+  const granTabs = ["week", "month", "year"].map((g) => `<button type="button" class="${dashGran === g ? "on" : ""}" data-gran="${g}">${g[0].toUpperCase() + g.slice(1)}</button>`).join("");
+  const viewTabs = ["table", "chart"].map((v) => `<button type="button" class="${dashView === v ? "on" : ""}" data-view2="${v}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("");
+  const header = `<div class="flex dash-head" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
     <div class="section-title" style="margin:0">Spend by category · ${settings.baseCurrency}</div>
-    <div class="flex" style="gap:8px"><div class="pill-tabs" style="margin:0">${granTabs}</div><div class="pill-tabs" style="margin:0">${viewTabs}</div></div>
+    <div class="flex" style="gap:8px"><div class="seg" role="group" aria-label="Period">${granTabs}</div><div class="seg" role="group" aria-label="View">${viewTabs}</div></div>
   </div>`;
 
   const tableMarkup = () => `
