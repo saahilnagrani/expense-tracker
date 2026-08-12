@@ -84,7 +84,7 @@ export const CATEGORY_RULES = [
   [/e&\s?digital|etisalat|tasleem|addc|auh gas|\bdu bill\b|\bdewa\b|myjio|\bjio\b|electricity|water|internet|mobile|recharge/i, "Bills & Utilities"],
 
   // Subscriptions
-  [/linkedin|apple\.com\/bill|itunes|netflix|spotify|prime|youtube|hotstar|disney|icloud|google one|openai|anthropic|claude|chatgpt|adobe|notion|canva/i, "Subscriptions"],
+  [/linkedin|apple\.com\/bill|itunes|netflix|spotify|prime|youtube|hotstar|disney|icloud|google one|openai|anthropic|claude|chatgpt|adobe|notion|canva|expressvpn|\bvpn\b/i, "Subscriptions"],
 
   // Beauty
   [/urbanclap|urban company|\bsalon\b|\bspa\b|beauty/i, "Beauty"],
