@@ -6,10 +6,18 @@
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 let openPop = null;
+// Close when the page/a container behind the popup scrolls (the popup is
+// fixed-positioned and would detach), but NOT when scrolling the option list
+// inside the popup itself.
+function onOuterScroll(e) {
+  const t = e.target;
+  if (openPop && t && t.nodeType === 1 && openPop.el.contains(t)) return; // inside the list
+  closePop();
+}
 function closePop() {
   if (!openPop) return;
   openPop.el.remove();
-  window.removeEventListener("scroll", closePop, true);
+  window.removeEventListener("scroll", onOuterScroll, true);
   window.removeEventListener("resize", closePop);
   openPop = null;
 }
@@ -76,7 +84,7 @@ function toggle(sel, btn) {
   openPop = { el, sel };
   const s = el.querySelector(".cs-search");
   if (s) { s.focus(); s.addEventListener("input", () => draw(s.value)); s.addEventListener("click", (e) => e.stopPropagation()); }
-  window.addEventListener("scroll", closePop, true);
+  window.addEventListener("scroll", onOuterScroll, true);
   window.addEventListener("resize", closePop);
 }
 
