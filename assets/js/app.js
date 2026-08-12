@@ -394,6 +394,8 @@ function emptyState() {
 
 // ---------- Expenses list ----------
 let expFilter = { q: "", month: "", card: "", cat: "", merchant: "" };
+let expPage = 0;
+const EXP_PAGE = 200; // render at most this many expense rows at once (perf)
 function renderExpenses() {
   const cards = [...new Set(expenses.map((e) => e.card).filter(Boolean))].sort();
   const months = [...new Set(expenses.map((e) => e.date.slice(0, 7)))].sort().reverse();
@@ -416,6 +418,10 @@ function renderExpenses() {
     return true;
   });
   const totalBase = filtered.reduce((a, e) => a + (spendBase(e) || 0), 0);
+  const pages = Math.max(1, Math.ceil(filtered.length / EXP_PAGE));
+  if (expPage >= pages) expPage = pages - 1;
+  if (expPage < 0) expPage = 0;
+  const pageRows = filtered.slice(expPage * EXP_PAGE, expPage * EXP_PAGE + EXP_PAGE);
 
   views.innerHTML = `
     <div class="card">
@@ -436,16 +442,23 @@ function renderExpenses() {
             <th>Date</th><th>Description</th><th>Category</th><th>Card / Source</th>
             <th class="amount">Amount</th><th class="amount">In ${settings.baseCurrency}</th><th>Spend</th><th></th>
           </tr></thead>
-          <tbody>${filtered.map(rowHtml).join("") || `<tr><td colspan="8" class="hint" style="padding:24px">No matching transactions.</td></tr>`}</tbody>
+          <tbody>${pageRows.map(rowHtml).join("") || `<tr><td colspan="8" class="hint" style="padding:24px">No matching transactions.</td></tr>`}</tbody>
         </table>
       </div>
+      ${pages > 1 ? `<div class="flex mt" style="align-items:center;gap:10px">
+        <button class="btn sm secondary" id="expPrev" ${expPage === 0 ? "disabled" : ""}>‹ Prev</button>
+        <span class="hint">Page ${expPage + 1} of ${pages} · rows ${expPage * EXP_PAGE + 1}–${Math.min(filtered.length, (expPage + 1) * EXP_PAGE)} of ${filtered.length}</span>
+        <button class="btn sm secondary" id="expNext" ${expPage >= pages - 1 ? "disabled" : ""}>Next ›</button>
+      </div>` : ""}
     </div>`;
 
-  $("#fq").addEventListener("input", (e) => { expFilter.q = e.target.value; debouncedExp(); });
+  $("#expPrev")?.addEventListener("click", () => { expPage--; renderExpenses(); });
+  $("#expNext")?.addEventListener("click", () => { expPage++; renderExpenses(); });
+  $("#fq").addEventListener("input", (e) => { expFilter.q = e.target.value; expPage = 0; debouncedExp(); });
   ["fmonth", "fcard", "fcat", "fmerchant"].forEach((id) => $("#" + id).addEventListener("change", (e) => {
-    expFilter[id.slice(1)] = e.target.value; renderExpenses();
+    expFilter[id.slice(1)] = e.target.value; expPage = 0; renderExpenses();
   }));
-  $("#fclear").addEventListener("click", () => { expFilter = { q: "", month: "", card: "", cat: "", merchant: "" }; renderExpenses(); });
+  $("#fclear").addEventListener("click", () => { expFilter = { q: "", month: "", card: "", cat: "", merchant: "" }; expPage = 0; renderExpenses(); });
   $("#expCsv").addEventListener("click", () => exportCsv(filtered));
   $$(".catsel").forEach((sel) => sel.addEventListener("change", async (e) => {
     const exp = expenses.find((x) => x.id === e.target.dataset.id);
@@ -787,6 +800,8 @@ async function fetchAndParse() {
 let reviewRows = [];
 let revFilter = { q: "", source: "", needsOnly: false, cat: "", merchant: "" };
 let reviewReplace = false; // "re-import & replace" mode chosen for this run
+let revPage = 0;
+const REV_PAGE = 200; // render at most this many review rows at once (perf)
 
 function renderReview(rows, problems) {
   // Replace mode: show every parsed row (including already-imported ones) so
@@ -797,6 +812,7 @@ function renderReview(rows, problems) {
   fresh.forEach((r) => { if (r._sel === undefined) r._sel = !r.needsReview; });
   reviewRows = fresh;
   revFilter = { q: "", source: "", needsOnly: false, cat: "", merchant: "" };
+  revPage = 0;
   const dupCount = rows.length - fresh.length;
   const area = $("#reviewArea");
   if (!rows.length) {
@@ -842,14 +858,16 @@ function renderReview(rows, problems) {
         <tbody id="revBody"></tbody>
       </table>
     </div>
+    <div id="revPager" class="flex mt" style="align-items:center;gap:10px"></div>
   </div>`;
 
+  const reset = () => { revPage = 0; renderRevBody(); };
   // .fsel styled via CSS
-  $("#revSearch").addEventListener("input", (e) => { revFilter.q = e.target.value; renderRevBody(); });
-  $("#revSource").addEventListener("change", (e) => { revFilter.source = e.target.value; renderRevBody(); });
-  $("#revCat").addEventListener("change", (e) => { revFilter.cat = e.target.value; renderRevBody(); });
-  $("#revMerchant").addEventListener("change", (e) => { revFilter.merchant = e.target.value; renderRevBody(); });
-  $("#revNeedsOnly").addEventListener("change", (e) => { revFilter.needsOnly = e.target.checked; renderRevBody(); });
+  $("#revSearch").addEventListener("input", (e) => { revFilter.q = e.target.value; reset(); });
+  $("#revSource").addEventListener("change", (e) => { revFilter.source = e.target.value; reset(); });
+  $("#revCat").addEventListener("change", (e) => { revFilter.cat = e.target.value; reset(); });
+  $("#revMerchant").addEventListener("change", (e) => { revFilter.merchant = e.target.value; reset(); });
+  $("#revNeedsOnly").addEventListener("change", (e) => { revFilter.needsOnly = e.target.checked; reset(); });
   $("#revAll").addEventListener("click", () => { filteredRev().forEach(({ r }) => (r._sel = true)); renderRevBody(); });
   $("#revNone").addEventListener("click", () => { filteredRev().forEach(({ r }) => (r._sel = false)); renderRevBody(); });
   $("#revSave").addEventListener("click", saveReview);
@@ -872,8 +890,22 @@ function renderRevBody() {
   const body = $("#revBody");
   if (!body) return;
   const rows = filteredRev();
-  body.innerHTML = rows.map(({ r, i }) => reviewRowHtml(r, i)).join("") ||
+  const pages = Math.max(1, Math.ceil(rows.length / REV_PAGE));
+  if (revPage >= pages) revPage = pages - 1;
+  if (revPage < 0) revPage = 0;
+  const slice = rows.slice(revPage * REV_PAGE, revPage * REV_PAGE + REV_PAGE);
+  body.innerHTML = slice.map(({ r, i }) => reviewRowHtml(r, i)).join("") ||
     `<tr><td colspan="9" class="hint" style="padding:20px">No rows match this filter.</td></tr>`;
+  const pager = $("#revPager");
+  if (pager) {
+    pager.innerHTML = pages > 1
+      ? `<button class="btn sm secondary" id="revPrev" ${revPage === 0 ? "disabled" : ""}>‹ Prev</button>
+         <span class="hint">Page ${revPage + 1} of ${pages} · rows ${revPage * REV_PAGE + 1}–${Math.min(rows.length, (revPage + 1) * REV_PAGE)} of ${rows.length}</span>
+         <button class="btn sm secondary" id="revNext" ${revPage >= pages - 1 ? "disabled" : ""}>Next ›</button>`
+      : "";
+    $("#revPrev")?.addEventListener("click", () => { revPage--; renderRevBody(); });
+    $("#revNext")?.addEventListener("click", () => { revPage++; renderRevBody(); });
+  }
   updateRevCounts();
   body.querySelectorAll("[data-f]").forEach((el) => el.addEventListener("input", () => {
     const i = +el.dataset.i, f = el.dataset.f;
