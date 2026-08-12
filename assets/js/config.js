@@ -30,6 +30,7 @@ export const DEFAULT_CATEGORIES = [
   "Transport",
   "Travel",
   "Bills & Utilities",
+  "Visa Fees",
   "Subscriptions",
   "Housing",
   "Health",
@@ -54,6 +55,9 @@ export const CATEGORY_RULES = [
 
   // Sports & fitness (padel/tennis courts, gyms, booking apps)
   [/matchi|padel|\bpadel\b|tennis|squash|\bgym\b|fitness ?first|climbing|crossfit/i, "Sports"],
+
+  // Visa / immigration paperwork (typing centres, DWTC visa services)
+  [/dubai world trade cent(er|re)|nypd typing/i, "Visa Fees"],
 
   // Food delivery (before Groceries / generic Careem, Noon)
   [/careem food|talabat|noon food|keeta|deliveroo|hardees?|uber ?eats/i, "Food Delivery"],
