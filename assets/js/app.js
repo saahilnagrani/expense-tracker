@@ -32,6 +32,28 @@ function sortedCats() {
   return [...(settings.categories || [])].sort((a, b) => a.localeCompare(b));
 }
 
+// Add a category to the single shared list (settings.categories) so it shows
+// up everywhere — Expenses, Import review and Settings all read this list, and
+// it syncs across devices. Returns the (possibly existing) category name.
+function addCategory(name) {
+  const c = (name || "").trim();
+  if (!c) return null;
+  if (!settings.categories.includes(c)) {
+    settings.categories = [...settings.categories, c];
+    saveSettings(settings);
+    markPrefsChanged();
+    scheduleSync();
+  }
+  return c;
+}
+
+// <option>s for a category-assignment dropdown, plus a "+ New category…" entry.
+function catOptionsHtml(selected) {
+  const opts = ["", ...sortedCats()].map((c) =>
+    `<option value="${esc(c)}" ${selected === c ? "selected" : ""}>${c || "—"}</option>`).join("");
+  return opts + `<option value="__new__">+ New category…</option>`;
+}
+
 // One unified password table: each card/account is a row, with a column for
 // your password and one for the household member's. A dash marks a cell that
 // doesn't apply (their-only card in your column, or an account in theirs). The
@@ -358,7 +380,16 @@ function renderExpenses() {
   $("#expCsv").addEventListener("click", () => exportCsv(filtered));
   $$(".catsel").forEach((sel) => sel.addEventListener("change", async (e) => {
     const exp = expenses.find((x) => x.id === e.target.dataset.id);
-    if (exp) { exp.category = e.target.value; exp.updatedAt = Date.now(); await putExpense(exp); scheduleSync(); toast("Category updated", "ok"); }
+    if (!exp) return;
+    let val = e.target.value;
+    if (val === "__new__") {
+      const added = addCategory(window.prompt("New category name:"));
+      if (!added) { renderExpenses(); return; }
+      val = added;
+    }
+    exp.category = val; exp.updatedAt = Date.now(); await putExpense(exp); scheduleSync();
+    renderExpenses(); // re-render so the new category shows in every dropdown
+    toast("Category updated", "ok");
   }));
   $$(".del").forEach((b) => b.addEventListener("click", async () => {
     if (!confirm("Delete this transaction?")) return;
@@ -390,8 +421,7 @@ function rowHtml(e) {
   const base = toBase(e.amount, e.currency, settings); // AED value for both debits & credits
   const cls = e.kind === "credit" ? "credit" : "debit";
   const st = spendStatus(e);
-  const catOpts = ["", ...sortedCats()].map((c) =>
-    `<option value="${esc(c)}" ${e.category === c ? "selected" : ""}>${c || "—"}</option>`).join("");
+  const catOpts = catOptionsHtml(e.category);
   return `<tr>
     <td>${e.date}</td>
     <td>${esc(e.description)}${e.kind === "credit" ? ' <span class="chip src-alert">credit</span>' : ""}</td>
@@ -763,7 +793,14 @@ function renderRevBody() {
   updateRevCounts();
   body.querySelectorAll("[data-f]").forEach((el) => el.addEventListener("input", () => {
     const i = +el.dataset.i, f = el.dataset.f;
-    if (reviewRows[i]) reviewRows[i][f] = f === "amount" ? parseFloat(el.value) : el.value;
+    if (!reviewRows[i]) return;
+    if (f === "category" && el.value === "__new__") {
+      const added = addCategory(window.prompt("New category name:"));
+      if (added) reviewRows[i].category = added;
+      renderRevBody(); // re-render so the new category shows in every dropdown
+      return;
+    }
+    reviewRows[i][f] = f === "amount" ? parseFloat(el.value) : el.value;
   }));
   body.querySelectorAll(".revChk").forEach((c) => c.addEventListener("change", () => {
     const i = +c.dataset.i;
@@ -784,8 +821,7 @@ function updateRevCounts() {
 }
 
 function reviewRowHtml(r, i) {
-  const cats = ["", ...sortedCats()].map((c) =>
-    `<option value="${esc(c)}" ${r.category === c ? "selected" : ""}>${c || "—"}</option>`).join("");
+  const cats = catOptionsHtml(r.category);
   return `<tr class="${r.needsReview ? "revneeds" : ""}">
     <td><input type="checkbox" class="revChk" data-i="${i}" ${r._sel ? "checked" : ""}></td>
     <td><input type="date" class="cellin" data-i="${i}" data-f="date" value="${r.date}"></td>
