@@ -140,6 +140,7 @@ async function boot() {
 }
 
 function go(view) {
+  closeCatPanel(); // it lives on <body>, so it would outlive the view that owns it
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
   location.hash = view;
   const fn = ({ dashboard: renderDashboard, expenses: renderExpenses,
@@ -357,6 +358,38 @@ async function runSync(silent) {
 let dashGran = "month"; // "week" | "month" | "year"
 let dashView = "table"; // "table" | "chart"
 let dashCats = null;     // null = all categories; else a Set of chosen ones
+
+// The category picker floats outside the dashboard card (dropdown on desktop,
+// bottom sheet on mobile), so its lifecycle is tracked here rather than in the
+// render closure — it must survive chart repaints and be closable from anywhere.
+let catPanel = null;
+function closeCatPanel() {
+  if (!catPanel) return;
+  catPanel.btn?.setAttribute("aria-expanded", "false");
+  catPanel.backdrop?.remove();
+  catPanel.el.remove();
+  catPanel = null;
+  document.removeEventListener("click", onCatDocClick);
+  window.removeEventListener("scroll", onCatScroll, true);
+  window.removeEventListener("resize", onCatResize);
+}
+function onCatDocClick(e) {
+  if (!catPanel) return;
+  if (catPanel.el.contains(e.target) || catPanel.btn.contains(e.target)) return;
+  closeCatPanel();
+}
+// The desktop dropdown is fixed-positioned and would detach if the page
+// scrolled — but scrolling the list inside it must not close it.
+function onCatScroll(e) {
+  const t = e.target;
+  if (catPanel && t && t.nodeType === 1 && catPanel.el.contains(t)) return;
+  closeCatPanel();
+}
+// Ignore height-only resizes (the mobile keyboard) — same reasoning as selects.js.
+function onCatResize() {
+  if (catPanel && window.innerWidth !== catPanel.w) closeCatPanel();
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCatPanel(); });
 // Categorical palette for the stacked bar chart (distinct, dark-friendly).
 const DASH_PALETTE = ["#4f8cff", "#37c98b", "#f6b73c", "#ef6f6c", "#a985f6", "#22b8cf",
   "#f78fb3", "#8bc34a", "#ff9f5a", "#6ea8fe", "#c4a35a", "#e05fa8", "#5ad1c8", "#d6d64f",
@@ -403,7 +436,6 @@ function renderDashboard() {
   const colorMap = {};
   [...cats].sort().forEach((c, i) => (colorMap[c] = DASH_PALETTE[i % DASH_PALETTE.length]));
   const dashColor = (c) => colorMap[c] || "#8aa0b2";
-  const selected = dashCats === null ? new Set(cats) : dashCats;
 
   // Segmented controls: one connected track per choice, far more compact than
   // a row of standalone pill buttons (and reads as a single either/or control).
@@ -484,25 +516,117 @@ function renderDashboard() {
     return `<svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" style="max-width:none;display:block">${g}</svg>`;
   };
 
-  const chartMarkup = () => {
-    const cap = { week: 26, month: 24, year: 100 }[dashGran];
-    const pers = periods.slice().sort().slice(-cap); // ascending (oldest→newest), recent N
-    const showCats = cats.filter((c) => selected.has(c));
+  // Live view of the current selection (dashCats === null means "all").
+  const curSel = () => (dashCats === null ? new Set(cats) : dashCats);
+
+  const cap = { week: 26, month: 24, year: 100 }[dashGran];
+  const chartPers = periods.slice().sort().slice(-cap); // ascending (oldest→newest), recent N
+
+  const chartInner = () => {
+    const showCats = cats.filter((c) => curSel().has(c));
     let maxStack = 0;
-    for (const pk of pers) { let s = 0; for (const c of showCats) s += Math.max(0, byPeriodCat[pk]?.[c] || 0); if (s > maxStack) maxStack = s; }
+    for (const pk of chartPers) { let s = 0; for (const c of showCats) s += Math.max(0, byPeriodCat[pk]?.[c] || 0); if (s > maxStack) maxStack = s; }
     const yMax = niceMax(maxStack);
-    // The checkbox is visually hidden (the chip's own dimmed/lit state shows
-    // selection) but kept in the DOM so clicking the label still fires the
-    // native change event the handler below listens for.
-    const chips = cats.map((c) => `<label class="dcat-chip"><input type="checkbox" class="dcat" value="${esc(c)}" ${selected.has(c) ? "checked" : ""}><span class="dot" style="background:${dashColor(c)}"></span>${esc(c)}</label>`).join("");
-    const chart = (showCats.length && pers.length)
-      ? `<div class="table-wrap mt">${barSvg(pers, showCats, yMax)}</div>`
+    return (showCats.length && chartPers.length)
+      ? `<div class="table-wrap mt">${barSvg(chartPers, showCats, yMax)}</div>`
       : `<div class="empty" style="padding:30px"><p class="muted">Pick at least one category to chart.</p></div>`;
-    return `<div class="dash-cats mt">
-        <button type="button" class="mini" id="catsAll">All</button>
-        <button type="button" class="mini" id="catsNone">None</button>
-        ${chips}
-      </div>${chart}`;
+  };
+
+  // Collapsed summary: the selected categories' colours double as the chart's
+  // legend, so hiding the full list doesn't make the bars unidentifiable.
+  const DOT_CAP = 8;
+  const summaryInner = () => {
+    const sel = cats.filter((c) => curSel().has(c));
+    const dots = sel.slice(0, DOT_CAP).map((c) => `<span class="dot" style="background:${dashColor(c)}" title="${esc(c)}"></span>`).join("");
+    const more = sel.length > DOT_CAP ? `<span class="dcat-more">+${sel.length - DOT_CAP}</span>` : "";
+    return `<span class="dcat-dots">${dots || `<span class="dcat-more">none</span>`}${more}</span>
+      <span class="dcat-count">${sel.length}/${cats.length}</span>${icon("chevron", 14)}`;
+  };
+
+  const chartMarkup = () => `<div class="dash-cats mt">
+      <button type="button" class="mini" id="catsAll">All</button>
+      <button type="button" class="mini" id="catsNone">None</button>
+      <button type="button" class="dcat-toggle" id="catsToggle" aria-expanded="false">${summaryInner()}</button>
+    </div><div id="dashChart">${chartInner()}</div>`;
+
+  // Repaint just the chart + summary, so the picker can stay open while you
+  // tick categories and watch the chart update.
+  const repaintChart = () => {
+    const ch = $("#dashChart"); if (ch) ch.innerHTML = chartInner();
+    const sm = $("#catsToggle"); if (sm) sm.innerHTML = summaryInner();
+  };
+
+  const syncPanel = () => {
+    if (!catPanel) return;
+    catPanel.el.querySelectorAll(".dcatp").forEach((c) => { c.checked = curSel().has(c.value); });
+  };
+
+  const setSel = (next) => { dashCats = next; repaintChart(); syncPanel(); };
+
+  // The picker: a dropdown under the button on desktop, a bottom sheet on
+  // mobile (far easier to reach one-handed with a long category list).
+  const openCatPanel = (btn) => {
+    closeCatPanel();
+    const sheet = window.matchMedia("(max-width: 640px)").matches;
+    const el = document.createElement("div");
+    el.className = "dcat-panel " + (sheet ? "sheet" : "pop");
+    el.innerHTML = `
+      <div class="dcat-head">
+        <span class="dcat-title">Categories</span>
+        <button type="button" class="mini" data-pall>All</button>
+        <button type="button" class="mini" data-pnone>None</button>
+        ${sheet ? `<button type="button" class="icon-btn" data-pclose aria-label="Done">${icon("x", 18)}</button>` : ""}
+      </div>
+      ${cats.length > 8 ? `<div class="dcat-search-wrap"><input class="dcat-search" placeholder="Search…" autocomplete="off"></div>` : ""}
+      <div class="dcat-list">${cats.map((c) => `<label class="dcat-opt" data-nm="${esc(c.toLowerCase())}">
+        <input type="checkbox" class="dcatp" value="${esc(c)}" ${curSel().has(c) ? "checked" : ""}>
+        <span class="dot" style="background:${dashColor(c)}"></span>
+        <span class="dcat-nm">${esc(c)}</span>
+        <span class="dcat-tick">${icon("check", 15)}</span>
+      </label>`).join("")}</div>`;
+    document.body.appendChild(el);
+
+    let backdrop = null;
+    if (sheet) {
+      backdrop = document.createElement("div");
+      backdrop.className = "dcat-backdrop";
+      document.body.appendChild(backdrop);
+      backdrop.addEventListener("click", closeCatPanel);
+    } else {
+      const r = btn.getBoundingClientRect();
+      el.style.minWidth = Math.max(230, r.width) + "px";
+      const ph = el.offsetHeight, below = window.innerHeight - r.bottom;
+      el.style.top = ((below >= ph + 8 || below >= r.top) ? r.bottom + 6 : Math.max(8, r.top - ph - 6)) + "px";
+      let left = r.left;
+      if (left + el.offsetWidth > window.innerWidth - 8) left = Math.max(8, window.innerWidth - el.offsetWidth - 8);
+      el.style.left = left + "px";
+    }
+
+    catPanel = { el, backdrop, btn, w: window.innerWidth, sheet };
+    btn.setAttribute("aria-expanded", "true");
+
+    el.querySelectorAll(".dcatp").forEach((chk) => chk.addEventListener("change", () => {
+      const next = new Set(curSel());
+      chk.checked ? next.add(chk.value) : next.delete(chk.value);
+      dashCats = next;
+      repaintChart();
+    }));
+    el.querySelector("[data-pall]")?.addEventListener("click", () => setSel(null));
+    el.querySelector("[data-pnone]")?.addEventListener("click", () => setSel(new Set()));
+    el.querySelector("[data-pclose]")?.addEventListener("click", closeCatPanel);
+    const s = el.querySelector(".dcat-search");
+    if (s) {
+      if (!sheet) s.focus(); // on touch this would pop the keyboard over the sheet
+      s.addEventListener("input", () => {
+        const q = s.value.trim().toLowerCase();
+        el.querySelectorAll(".dcat-opt").forEach((o) => {
+          o.style.display = !q || o.dataset.nm.includes(q) ? "" : "none";
+        });
+      });
+    }
+    setTimeout(() => document.addEventListener("click", onCatDocClick), 0);
+    if (!sheet) window.addEventListener("scroll", onCatScroll, true);
+    window.addEventListener("resize", onCatResize);
   };
 
   views.innerHTML = `
@@ -512,16 +636,15 @@ function renderDashboard() {
       <div class="hint mt">Net spend in ${settings.baseCurrency}: refunds and other credits reduce the total (kept in the merchant's category); only card-bill payments are excluded.</div>
     </div>`;
 
-  $$("[data-gran]").forEach((b) => b.addEventListener("click", () => { dashGran = b.dataset.gran; renderDashboard(); }));
-  $$("[data-view2]").forEach((b) => b.addEventListener("click", () => { dashView = b.dataset.view2; renderDashboard(); }));
+  $$("[data-gran]").forEach((b) => b.addEventListener("click", () => { closeCatPanel(); dashGran = b.dataset.gran; renderDashboard(); }));
+  $$("[data-view2]").forEach((b) => b.addEventListener("click", () => { closeCatPanel(); dashView = b.dataset.view2; renderDashboard(); }));
   if (dashView === "chart") {
-    $("#catsAll")?.addEventListener("click", () => { dashCats = null; renderDashboard(); });
-    $("#catsNone")?.addEventListener("click", () => { dashCats = new Set(); renderDashboard(); });
-    $$(".dcat").forEach((chk) => chk.addEventListener("change", () => {
-      const cur = dashCats === null ? new Set(cats) : new Set(dashCats);
-      chk.checked ? cur.add(chk.value) : cur.delete(chk.value);
-      dashCats = cur; renderDashboard();
-    }));
+    $("#catsAll")?.addEventListener("click", () => setSel(null));
+    $("#catsNone")?.addEventListener("click", () => setSel(new Set()));
+    $("#catsToggle")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (catPanel) closeCatPanel(); else openCatPanel(e.currentTarget);
+    });
   }
 }
 
