@@ -92,8 +92,8 @@ export const CATEGORY_RULES = [
   // Housing / rent
   [/asteco|property mgt|property management|\brent\b|ejari/i, "Housing"],
 
-  // Health
-  [/mede?ror|medeor|pharmacy|hospital|clinic|aster|medcare|apollo|\bhealth\b|dr\.?\s/i, "Health"],
+  // Health (word-bounded to avoid HOSPITALITY→hospital and MASTER→aster)
+  [/mede?ror|medeor|pharmacy|\bhospital\b|\bclinic\b|\baster\b|medcare|\bapollo\b|\bhealth\b|dr\.?\s/i, "Health"],
 
   // Shopping (generic, after specific Amazon/Noon groceries)
   [/amazon|noon|flipkart|myntra|ikea|namshi|ajio|wh ?smith|asos|shein|6th ?street|6thstreet|store|shop/i, "Shopping"],
