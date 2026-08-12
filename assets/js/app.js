@@ -491,13 +491,16 @@ function renderDashboard() {
     let maxStack = 0;
     for (const pk of pers) { let s = 0; for (const c of showCats) s += Math.max(0, byPeriodCat[pk]?.[c] || 0); if (s > maxStack) maxStack = s; }
     const yMax = niceMax(maxStack);
-    const chips = cats.map((c) => `<label class="chip" style="cursor:pointer;user-select:none"><input type="checkbox" class="dcat" value="${esc(c)}" ${selected.has(c) ? "checked" : ""} style="margin-right:6px"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${dashColor(c)};margin-right:5px;vertical-align:middle"></span>${esc(c)}</label>`).join("");
+    // The checkbox is visually hidden (the chip's own dimmed/lit state shows
+    // selection) but kept in the DOM so clicking the label still fires the
+    // native change event the handler below listens for.
+    const chips = cats.map((c) => `<label class="dcat-chip"><input type="checkbox" class="dcat" value="${esc(c)}" ${selected.has(c) ? "checked" : ""}><span class="dot" style="background:${dashColor(c)}"></span>${esc(c)}</label>`).join("");
     const chart = (showCats.length && pers.length)
       ? `<div class="table-wrap mt">${barSvg(pers, showCats, yMax)}</div>`
       : `<div class="empty" style="padding:30px"><p class="muted">Pick at least one category to chart.</p></div>`;
-    return `<div class="flex mt" style="gap:6px;flex-wrap:wrap;align-items:center">
-        <button class="btn sm secondary" id="catsAll">All</button>
-        <button class="btn sm secondary" id="catsNone">None</button>
+    return `<div class="dash-cats mt">
+        <button type="button" class="mini" id="catsAll">All</button>
+        <button type="button" class="mini" id="catsNone">None</button>
         ${chips}
       </div>${chart}`;
   };
