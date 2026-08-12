@@ -10,7 +10,7 @@
 // in an editable review table before anything is saved. Add or tune a bank
 // by editing the matching function below.
 
-import { CATEGORY_RULES } from "./config.js";
+import { CATEGORY_RULES, AXIS_CARD_PRODUCTS } from "./config.js";
 
 const MONTHS = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
 
@@ -157,8 +157,12 @@ export function parseStatementByBank(bank, lines, opts = {}) {
   // address; the product name is printed in the statement header. Detect it so
   // each card can be tracked separately, like the ENBD Noon/Etihad split.
   if (bank === "axis-cc") {
-    const product = detectAxisProduct(lines);
-    if (product) for (const r of rows) r.cardProduct = product;
+    const textProduct = detectAxisProduct(lines); // fallback for unmapped cards
+    for (const r of rows) {
+      const byNumber = r.card4 && AXIS_CARD_PRODUCTS[r.card4];
+      const product = byNumber || textProduct;
+      if (product) r.cardProduct = product;
+    }
   }
   const primary = (rows.find((r) => r.cardHolder) || {}).cardHolder || null;
   if (primary) {
@@ -188,15 +192,18 @@ function cleanWioRow(t) {
   return out;
 }
 
-// Pull the Axis card product ("Magnus", "Select", …) from a statement header
-// line like "Axis Bank Magnus Credit Card". Returns null if none is found.
+// Pull the Axis card product ("Magnus", "Select", …) from the statement's
+// TITLE line — which is only "Axis Bank <Product> Credit Card". Anchored to the
+// whole line (so it isn't fooled by marketing sentences) and with a denylist
+// for promo words like "Recommends". Returns null if none is found.
+const AXIS_PROMO = /recommend|reward|offer|upgrade|apply|welcome|benefit|feature|eligible|instant|exclusive|premium|save|new\b/i;
 function detectAxisProduct(lines) {
-  for (const raw of lines.slice(0, 40)) {
+  for (const raw of lines.slice(0, 60)) {
     const line = (raw || "").replace(/\s+/g, " ").trim();
-    const m = line.match(/axis bank\s+([A-Za-z][A-Za-z ]{1,20}?)\s+credit card/i);
+    const m = line.match(/^axis bank\s+([A-Za-z][A-Za-z ]{1,18}?)\s+credit card(?:\s+statement)?$/i);
     if (m) {
       const p = m[1].trim().replace(/\s+/g, " ");
-      if (p && !/^(the|your|a|my)$/i.test(p)) {
+      if (p && !AXIS_PROMO.test(p) && !/^(the|your|a|my)$/i.test(p)) {
         return p.replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\B\w/g, (c) => c.toLowerCase());
       }
     }

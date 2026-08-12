@@ -172,6 +172,14 @@ export const SOURCES = [
     passwordHint: "Check the Bank of India email for the password format." },
 ];
 
+// Axis emails several cards from one address and mislabels the product in
+// marketing copy, so map the card's last 4 digits (from the statement's per-
+// card section header) to the real product name. Add-on cards included.
+export const AXIS_CARD_PRODUCTS = {
+  "2234": "Magnus", "2242": "Magnus",
+  "1985": "Select", "1993": "Select",
+};
+
 export const SETTINGS_KEY = "et.settings.v1";
 
 export function defaultSettings() {
