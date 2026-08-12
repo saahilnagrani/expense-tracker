@@ -69,13 +69,13 @@ export const CATEGORY_RULES = [
   [/careem food|talabat|noon food|keeta|deliveroo|hardees?|uber ?eats/i, "Food Delivery"],
 
   // Groceries (specific merchants before generic Amazon/Noon → Shopping)
-  [/amazon ?now|amazonufg|maf hyper|waitrose|sainsbury|tesco|asda|\bm&s\b|marks ?& ?spencer|careem deliveries|careem quik|al ain food|noon minutes|%\s?arabica|lulu|carrefour|spinneys|grocer|bigbasket|blinkit|zepto|instashop|supermarket/i, "Groceries"],
+  [/amazon ?now|amazonufg|maf hyper|waitrose|sainsbury|tesco|asda|\bm&s\b|marks ?& ?spencer|careem deliveries|careem quik|al ain food|noon minutes|%\s?arabica|lulu|carrefour|spinneys|grocer|bigbasket|blinkit|zepto|instashop|supermarket|bloomy/i, "Groceries"],
 
   // Restaurants / bars / pubs / dining (bars & pubs → Food & Dining too)
-  [/mcdonald|five guys|quick snack selling|royal catering|caribou coffee|kfc|starbucks|restauran|\bcafe\b|dining|\bpub\b|\bbar\b|tavern|brasserie|bistro|gastropub/i, "Food & Dining"],
+  [/mcdonald|five guys|quick snack selling|royal catering|caribou coffee|coffee house|madang|kfc|starbucks|restauran|\bcafe\b|dining|\bpub\b|\bbar\b|tavern|brasserie|bistro|gastropub/i, "Food & Dining"],
 
-  // Transport (TfL, e-bikes like Forest, ride-hail, fuel, tolls)
-  [/yango|parkonic|zofeur|dubai smart government|\brta\b|\btfl\b|\bforest\b|uber|\bcareem\b|\bola\b|metro|taxi|fuel|petrol|adnoc|enoc|salik/i, "Transport"],
+  // Transport (TfL, e-bikes like Forest, ride-hail, fuel, tolls, car washes)
+  [/yango|parkonic|zofeur|dubai smart government|\brta\b|\btfl\b|\bforest\b|uber|\bcareem\b|\bola\b|metro|taxi|fuel|petrol|adnoc|enoc|salik|wash/i, "Transport"],
 
   // Travel
   [/\bvfs\b|emirates|etihad|air ?india|air ?arabia|wizz ?air|indigo|flight|hotel|booking\.com|airbnb|makemytrip|kiwi/i, "Travel"],
@@ -87,7 +87,7 @@ export const CATEGORY_RULES = [
   [/linkedin|apple\.com\/bill|itunes|netflix|spotify|prime|youtube|hotstar|disney|icloud|google one|openai|anthropic|claude|chatgpt|adobe|notion|canva|expressvpn|\bvpn\b/i, "Subscriptions"],
 
   // Beauty
-  [/urbanclap|urban company|\bsalon\b|\bspa\b|beauty/i, "Beauty"],
+  [/urbanclap|urban company|\bsalon\b|\bspa\b|beauty|aynan/i, "Beauty"],
 
   // Housing / rent
   [/asteco|property mgt|property management|\brent\b|ejari/i, "Housing"],
