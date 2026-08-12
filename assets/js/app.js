@@ -32,6 +32,18 @@ function sortedCats() {
   return [...(settings.categories || [])].sort((a, b) => a.localeCompare(b));
 }
 
+// Human date/month formatting.
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function fmtDate(iso) { // "2026-01-23" -> "23 Jan 2026"
+  const p = String(iso || "").split("-").map(Number);
+  return (p.length === 3 && p[0] && p[1] && p[2]) ? `${p[2]} ${MON[p[1] - 1]} ${p[0]}` : (iso || "");
+}
+function fmtMonth(ym) { // "2026-01" -> "Jan 2026"
+  const p = String(ym || "").split("-").map(Number);
+  return (p.length >= 2 && p[0] && p[1]) ? `${MON[p[1] - 1]} ${p[0]}` : (ym || "");
+}
+function fmtPeriod(pk, gran) { return gran === "month" ? fmtMonth(pk) : pk; }
+
 // Add a category to the single shared list (settings.categories) so it shows
 // up everywhere — Expenses, Import review and Settings all read this list, and
 // it syncs across devices. Returns the (possibly existing) category name.
@@ -405,7 +417,7 @@ function renderDashboard() {
           </tr></thead>
           <tbody>
             ${periods.map((pk) => `<tr>
-              <td><b>${pk}</b></td>
+              <td><b>${esc(fmtPeriod(pk, dashGran))}</b></td>
               <td class="amount"><b>${num(periodTotals[pk] || 0)}</b></td>
               ${cats.map((c) => `<td class="amount">${cell(byPeriodCat[pk]?.[c])}</td>`).join("")}
             </tr>`).join("")}
@@ -439,11 +451,11 @@ function renderDashboard() {
         const val = Math.max(0, byPeriodCat[pk]?.[c] || 0);
         if (val <= 0) continue;
         const h = (val / yMax) * plotH, ry = y0 - h;
-        g += `<rect x="${bx}" y="${ry.toFixed(1)}" width="${barW}" height="${Math.max(0.5, h).toFixed(1)}" fill="${dashColor(c)}"><title>${esc(c)} · ${esc(pk)}: ${settings.baseCurrency} ${num(val)}</title></rect>`;
+        g += `<rect x="${bx}" y="${ry.toFixed(1)}" width="${barW}" height="${Math.max(0.5, h).toFixed(1)}" fill="${dashColor(c)}"><title>${esc(c)} · ${esc(fmtPeriod(pk, dashGran))}: ${settings.baseCurrency} ${num(val)}</title></rect>`;
         y0 = ry;
       }
       const lx = bx + barW / 2, ly = plotBottom + 12;
-      g += `<text x="${lx}" y="${ly}" transform="rotate(-40 ${lx} ${ly})" text-anchor="end" font-size="10" fill="var(--muted)">${esc(pk)}</text>`;
+      g += `<text x="${lx}" y="${ly}" transform="rotate(-40 ${lx} ${ly})" text-anchor="end" font-size="10" fill="var(--muted)">${esc(fmtPeriod(pk, dashGran))}</text>`;
     });
     g += `<line x1="${left}" y1="${plotBottom}" x2="${svgW - right}" y2="${plotBottom}" stroke="var(--border)" stroke-width="1.5"/>`;
     return `<svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" style="max-width:none;display:block">${g}</svg>`;
@@ -612,7 +624,7 @@ function rowHtml(e) {
   const st = spendStatus(e);
   const catOpts = catOptionsHtml(e.category);
   return `<tr>
-    <td>${e.date}</td>
+    <td style="white-space:nowrap">${fmtDate(e.date)}</td>
     <td>${esc(e.description)}${e.kind === "credit" ? ' <span class="chip src-alert">credit</span>' : ""}</td>
     <td><select class="catsel" data-id="${e.id}">${catOpts}</select></td>
     <td>${esc(e.card || "—")} <span class="chip src-${e.source === "manual" ? "manual" : e.source === "recurring" ? "recurring" : e.source === "alert" ? "alert" : "statement"}">${srcLabel(e.source)}</span></td>
@@ -655,7 +667,7 @@ function renderAdd() {
           <td>${t.dayOfMonth || 1}</td>
           <td>${esc(t.category || "—")}</td>
           <td>${esc(t.paidVia || "—")}</td>
-          <td class="hint">${esc(t.startMonth || "")}${t.active === false ? " · paused" : ""}</td>
+          <td class="hint" style="white-space:nowrap">${esc(fmtMonth(t.startMonth))}${t.active === false ? " · paused" : ""}</td>
           <td><input type="month" class="cellin recEnd" data-id="${t.id}" value="${t.endMonth || ""}" style="width:150px"></td>
           <td class="right"><button class="btn sm secondary recToggle" data-id="${t.id}">${t.active === false ? "Resume" : "Pause"}</button> <button class="icon-btn recDel" data-id="${t.id}" title="Delete">🗑</button></td>
         </tr>`).join("")}
@@ -1033,6 +1045,18 @@ function renderRevBody() {
     if (reviewRows[i]) reviewRows[i]._sel = c.checked;
     updateRevCounts();
   }));
+  // Formatted date, tap to edit: swap in a date input, commit on change/blur.
+  body.querySelectorAll(".revdate").forEach((td) => td.addEventListener("click", () => {
+    if (td.querySelector("input")) return;
+    const i = +td.dataset.i, r = reviewRows[i];
+    if (!r) return;
+    td.innerHTML = `<input type="date" class="cellin" value="${r.date}" style="width:150px">`;
+    const inp = td.querySelector("input");
+    inp.focus();
+    const commit = () => { if (inp.value) r.date = inp.value; td.innerHTML = `<span style="border-bottom:1px dotted var(--border)">${fmtDate(r.date)}</span>`; };
+    inp.addEventListener("change", commit);
+    inp.addEventListener("blur", commit);
+  }));
 }
 
 function updateRevCounts() {
@@ -1050,7 +1074,7 @@ function reviewRowHtml(r, i) {
   const cats = catOptionsHtml(r.category);
   return `<tr class="${r.needsReview ? "revneeds" : ""}">
     <td><input type="checkbox" class="revChk" data-i="${i}" ${r._sel ? "checked" : ""}></td>
-    <td><input type="date" class="cellin" data-i="${i}" data-f="date" value="${r.date}"></td>
+    <td class="revdate" data-i="${i}" title="Click to edit" style="white-space:nowrap;cursor:pointer"><span style="border-bottom:1px dotted var(--border)">${fmtDate(r.date)}</span></td>
     <td><input class="cellin" data-i="${i}" data-f="description" value="${esc(r.description)}" style="min-width:200px"></td>
     <td class="amount"><input type="number" step="0.01" class="cellin amt" data-i="${i}" data-f="amount" value="${r.amount}" style="width:96px"></td>
     <td>${esc(r.currency || "?")}</td>
