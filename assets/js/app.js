@@ -560,7 +560,7 @@ function renderExpenses() {
   // on search/filter, so the search input keeps focus while you type.
   views.innerHTML = `
     <div class="card">
-      <div class="flex">
+      <div class="flex filters">
         <input id="fq" placeholder="Search merchant / card…" value="${esc(expFilter.q)}" style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)">
         <select id="fmonth" class="fsel"><option value="">All months</option>${months.map((m) => `<option value="${m}" ${expFilter.month === m ? "selected" : ""}>${fmtMonth(m)}</option>`).join("")}</select>
         <select id="fcard" class="fsel"><option value="">All cards</option>${cards.map((c) => `<option ${expFilter.card === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
@@ -989,7 +989,7 @@ function renderReview(rows, problems) {
     </div>
     ${reviewReplace ? `<div class="warnbox mt">Replace mode: saving will overwrite existing transactions from these statements with the freshly-parsed versions.</div>` : (dupCount ? `<div class="hint mt">${dupCount} already-imported transaction(s) hidden.</div>` : "")}
     ${problems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("")}
-    <div class="flex mt">
+    <div class="flex mt filters">
       <input id="revSearch" placeholder="Search description / card…" style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)">
       <select id="revSource" class="fsel"><option value="">All sources</option>${sources.map((s) => `<option>${esc(s)}</option>`).join("")}</select>
       <select id="revCat" class="fsel"><option value="">All categories</option>${revCats.map(([c, n]) => `<option value="${esc(c)}" ${revFilter.cat === c ? "selected" : ""}>${esc(c)} (${n})</option>`).join("")}</select>
