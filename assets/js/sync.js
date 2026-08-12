@@ -53,6 +53,7 @@ export async function syncNow() {
     // them too. The Client ID stays device-local (you need it to connect before
     // any sync can run, so syncing it adds nothing).
     spouseEnabled: settings.spouseEnabled, spouseName: settings.spouseName, spouseLabel: settings.spouseLabel,
+    attributeFees: settings.attributeFees,
     // PDF passwords sync too (opted in): they ride in the same private Drive
     // appDataFolder file, readable only by this app on the user's account.
     passwords: settings.passwords || {}, spousePasswords: settings.spousePasswords || {},
@@ -76,6 +77,7 @@ export async function syncNow() {
     if (prefs.spouseEnabled !== undefined) s.spouseEnabled = prefs.spouseEnabled;
     if (prefs.spouseName !== undefined) s.spouseName = prefs.spouseName;
     if (prefs.spouseLabel !== undefined) s.spouseLabel = prefs.spouseLabel;
+    if (prefs.attributeFees !== undefined) s.attributeFees = prefs.attributeFees;
     // Union password maps so a password entered on either device survives; the
     // newer prefs blob wins for any bank present on both.
     if (prefs.passwords) s.passwords = { ...s.passwords, ...prefs.passwords };

@@ -190,6 +190,9 @@ export function defaultSettings() {
     lookbackMonths: 12,
     // Cross-device sync via the user's private Google Drive app-data folder.
     autoSync: true,
+    // Attribute a foreign-currency fee (and its GST) to the purchase it was
+    // charged on, so it lands in that purchase's category instead of Fees.
+    attributeFees: true,
     // Household: import a second person's cards, separated by a Gmail label
     // (their forwarded statements carry it; yours don't). Passwords are local.
     spouseEnabled: false,

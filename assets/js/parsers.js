@@ -167,11 +167,15 @@ export function parseStatementByBank(bank, lines, opts = {}) {
 // rules can match, and pre-tag card payments and FX-fee lines.
 const WIO_CARD_PAYMENT = /\brepayment\b|credit card payment|\benbd\b|\badcb\b|\bfab\b|\baxis\b|noon credit|etihad guest/i;
 function cleanWioRow(t) {
-  const description = (t.description || "")
+  const raw = t.description || "";
+  // Capture the P<reference> id: a purchase and its Foreign Exchange Fee share
+  // the same reference, which lets us link the fee to its purchase exactly.
+  const refM = raw.match(/^P(\d{6,})/i);
+  const description = raw
     .replace(/^P\d{6,}\s*/i, "")   // leading reference id
     .replace(/[+\-]\s*$/, "")       // trailing +/- left by the signed amount
     .trim();
-  const out = { ...t, description };
+  const out = { ...t, description, ref: refM ? refM[1] : null };
   if (WIO_CARD_PAYMENT.test(description)) out.category = "Card Payment";
   else if (/foreign exchange/i.test(description)) out.category = "Fees & Interest";
   return out;
@@ -194,4 +198,115 @@ export function cleanMerchant(s) {
 export function dedupeKey(t) {
   return [t.source || "", t.card || "", t.date, t.amount.toFixed(2),
     (t.description || "").toLowerCase().replace(/\s+/g, "").slice(0, 24)].join("|");
+}
+
+// ---------------------------------------------------------------------------
+// Attribute a foreign-currency fee (and its GST) to the purchase it was levied
+// on, so the fee lands in that purchase's category instead of a generic
+// "Fees & Interest" bucket. Amounts never change — only the fee's category.
+//
+// Linking signals, in order of reliability:
+//   1. Shared reference id (Wio): the fee row carries the same P<ref> as its
+//      purchase — an exact link.
+//   2. Amount ratio + date (Axis etc.): fee ≈ markup% × purchase within 0–2
+//      days. The markup rate is auto-detected per statement from the clear
+//      one-to-one matches, then used as a tight band to resolve the rest.
+//   3. GST ≈ 18% of a fee, within 0–2 days → inherits that fee's category, but
+//      only when the fee itself linked to a purchase (so GST on annual/late
+//      fees stays in Fees & Interest).
+// Ambiguous cases (2+ plausible parents) are left in Fees & Interest and
+// flagged for review rather than guessed.
+// ---------------------------------------------------------------------------
+const FEE_RE = /foreign currency transaction fee|foreign exchange fee|foreign transaction fee|\bdcc markup\b|\bmarkup\b/i;
+const GST_RE = /^gst\b/i;
+const DAY = 86400000;
+
+function addReason(existing, reason) {
+  return existing ? `${existing}; ${reason}` : reason;
+}
+
+export function linkFeesToPurchases(rows, enabled) {
+  if (!enabled) return rows;
+  // Only match within the same card (add-on cards are separate people).
+  const groups = new Map();
+  for (const r of rows) {
+    const k = r.card || "";
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  for (const g of groups.values()) linkGroup(g);
+  return rows;
+}
+
+function linkGroup(rows) {
+  const feeIdx = [], gstIdx = [], purch = [];
+  rows.forEach((r, i) => {
+    const d = (r.description || "").trim();
+    if (GST_RE.test(d) && d.length <= 8) gstIdx.push(i);
+    else if (FEE_RE.test(d)) feeIdx.push(i);
+    else if (r.kind !== "credit" && r.category !== "Card Payment") purch.push(i);
+  });
+  if (!feeIdx.length && !gstIdx.length) return;
+
+  const gap = (a, b) => Math.abs(Date.parse(a) - Date.parse(b));
+  const within = (a, b, n) => { const x = gap(a, b); return isFinite(x) && x <= n * DAY; };
+  const feeParent = {}; // feeIndex -> purchaseIndex
+
+  // 1) Exact reference match (Wio).
+  for (const fi of feeIdx) {
+    const ref = rows[fi].ref;
+    if (!ref) continue;
+    const pi = purch.find((j) => rows[j].ref && rows[j].ref === ref);
+    if (pi != null) feeParent[fi] = pi;
+  }
+
+  // 2) Amount-ratio + date for the rest (Axis etc.).
+  const remaining = feeIdx.filter((fi) => feeParent[fi] == null);
+  const LO = 0.008, HI = 0.045; // wide band: ~0.8%–4.5% covers 2%–3.5% cards
+  const candidates = (fi, lo, hi) => {
+    const fee = rows[fi];
+    return purch.filter((pi) => {
+      const p = rows[pi];
+      if (p.amount <= 0) return false;
+      if (!within(p.date, fee.date, 2)) return false;
+      const ratio = fee.amount / p.amount;
+      return ratio >= lo && ratio <= hi;
+    });
+  };
+  // pass A: estimate this statement's markup rate from unambiguous matches
+  const ratios = [];
+  for (const fi of remaining) {
+    const c = candidates(fi, LO, HI);
+    if (c.length === 1) ratios.push(rows[fi].amount / rows[c[0]].amount);
+  }
+  let rate = null;
+  if (ratios.length) { ratios.sort((a, b) => a - b); rate = ratios[Math.floor(ratios.length / 2)]; }
+  // pass B: assign using a tight band around the detected rate (or wide if none)
+  const lo = rate ? rate * 0.75 : LO, hi = rate ? rate * 1.25 : HI;
+  for (const fi of remaining) {
+    let c = candidates(fi, lo, hi);
+    if (c.length === 1) { feeParent[fi] = c[0]; continue; }
+    if (c.length > 1) {
+      rows[fi].needsReview = true;
+      rows[fi].reviewReason = addReason(rows[fi].reviewReason, "Forex fee: multiple possible purchases — set the category manually");
+    }
+  }
+
+  // apply fee -> parent category
+  for (const fi of Object.keys(feeParent)) {
+    rows[fi].category = rows[feeParent[fi]].category;
+    rows[fi]._feeParent = feeParent[fi];
+  }
+
+  // 3) GST -> a linked fee (18%) -> inherit that purchase's category
+  for (const gi of gstIdx) {
+    const gst = rows[gi];
+    const cands = feeIdx.filter((fi) => rows[fi]._feeParent != null &&
+      within(rows[fi].date, gst.date, 2) &&
+      (gst.amount / rows[fi].amount) >= 0.14 && (gst.amount / rows[fi].amount) <= 0.22);
+    if (!cands.length) continue;
+    const cats = new Set(cands.map((fi) => rows[fi].category));
+    if (cats.size === 1) gst.category = rows[cands[0]].category;
+    else { gst.needsReview = true; gst.reviewReason = addReason(gst.reviewReason, "GST: multiple possible forex fees — set the category manually"); }
+  }
 }
