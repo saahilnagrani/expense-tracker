@@ -9,7 +9,7 @@ import { toBase, fmt, fmtBase } from "./currency.js";
 import * as GM from "./gmail.js";
 import { extractText, PdfPasswordError } from "./pdf.js";
 import {
-  parseStatementByBank, guessCategory, dedupeKey,
+  parseStatementByBank, guessCategory, dedupeKey, linkFeesToPurchases,
 } from "./parsers.js";
 import { esc } from "./dashboard.js";
 
@@ -662,6 +662,11 @@ async function fetchAndParse() {
           if (nice) { r.card = `${spec.cardLabel} (${nice})`; r.owner = "spouse"; }
         }
         r.category = r.category || guessCategory(r.description);
+      }
+      // Attribute forex fees + GST to the purchase they were levied on (uses
+      // final categories & card labels), unless the user turned this off.
+      linkFeesToPurchases(rows, settings.attributeFees !== false);
+      for (const r of rows) {
         r.dedupeKey = dedupeKey({ ...r, source: src.kind });
         r._dup = existing.has(r.dedupeKey);
       }
@@ -915,6 +920,10 @@ function renderSettings() {
           <button class="btn sm secondary" id="recat">Re-categorize uncategorized</button>
           <span class="hint">${expenses.filter((e) => !e.category).length} uncategorized · applies the current rules to blank categories only</span>
         </div>
+        <label class="flex mt" style="gap:8px;cursor:pointer;border-top:1px solid var(--border);padding-top:12px">
+          <input type="checkbox" id="attrFees" ${settings.attributeFees !== false ? "checked" : ""}>
+          <span>Attribute forex fees &amp; GST to the original purchase's category<br><span class="hint">A foreign-currency fee (and its GST) is filed under the purchase it was charged on, instead of Fees &amp; Interest. Ambiguous ones are left in Fees &amp; Interest and flagged for review.</span></span>
+        </label>
       </div>
       <div class="card">
         <div class="section-title">Data</div>
@@ -986,6 +995,7 @@ function renderSettings() {
     settings.spouseLabel = $("#spLabel")?.value.trim() || "";
     settings.spousePasswords = settings.spousePasswords || {};
     $$(".spPw").forEach((el) => { settings.spousePasswords[el.dataset.bank] = el.value; });
+    settings.attributeFees = $("#attrFees")?.checked !== false;
     saveSettings(settings);
     await markPrefsChanged(); // base currency / rates / categories are synced prefs
     updateBasePill();
