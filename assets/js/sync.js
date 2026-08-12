@@ -44,6 +44,18 @@ export async function syncNow() {
   }
   const merged = [...map.values()];
 
+  // --- merge recurring templates by id (union), never let an empty list on
+  // one device wipe the templates on another. Deleted templates are tombstoned
+  // (by their id) so a real delete still propagates. ---
+  const remoteRec = (remote.prefs && remote.prefs.recurring) || [];
+  const localRec = settings.recurring || [];
+  const recMap = new Map();
+  for (const t of [...remoteRec, ...localRec]) {
+    if (!t || !t.id || deleted[t.id]) continue; // local listed last → wins on ties
+    recMap.set(t.id, t);
+  }
+  const mergedRecurring = [...recMap.values()];
+
   // --- prefs last-write-wins ---
   const localPrefsAt = await getMeta("prefsUpdatedAt", 0);
   const localPrefs = {
@@ -73,7 +85,7 @@ export async function syncNow() {
     s.baseCurrency = prefs.baseCurrency || s.baseCurrency;
     s.rates = { ...s.rates, ...(prefs.rates || {}) };
     s.categories = prefs.categories && prefs.categories.length ? prefs.categories : s.categories;
-    if (prefs.recurring) s.recurring = prefs.recurring;
+    s.recurring = mergedRecurring; // union by id, not last-write-wins
     if (prefs.spouseEnabled !== undefined) s.spouseEnabled = prefs.spouseEnabled;
     if (prefs.spouseName !== undefined) s.spouseName = prefs.spouseName;
     if (prefs.spouseLabel !== undefined) s.spouseLabel = prefs.spouseLabel;
@@ -86,8 +98,9 @@ export async function syncNow() {
   }
   await setMeta("prefsUpdatedAt", prefsUpdatedAt);
 
-  // --- push merged result up to Drive ---
-  const payload = { version: 1, updatedAt: Date.now(), expenses: merged, deleted, prefs, prefsUpdatedAt };
+  // --- push merged result up to Drive (with the unioned recurring list) ---
+  const payload = { version: 1, updatedAt: Date.now(), expenses: merged, deleted,
+    prefs: { ...prefs, recurring: mergedRecurring }, prefsUpdatedAt };
   await Drive.writeFile(payload, file && file.id);
 
   const at = Date.now();

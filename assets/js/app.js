@@ -1,7 +1,7 @@
 // Main UI controller: routing, views, and wiring for the Expense Tracker.
 import {
   allExpenses, putExpense, putMany, deleteExpense, clearAll,
-  existingDedupeKeys, loadSettings, saveSettings, uid, recordDeletion,
+  existingDedupeKeys, loadSettings, saveSettings, uid, recordDeletion, getTombstones,
 } from "./db.js";
 import { syncNow, markPrefsChanged, lastSyncedAt } from "./sync.js";
 import { SOURCES, DEFAULT_CATEGORIES } from "./config.js";
@@ -98,6 +98,7 @@ function spendBase(e) {
 // ---------- boot ----------
 async function boot() {
   expenses = await allExpenses();
+  await recoverRecurringTemplates();
   await materializeRecurring();
   await migrateRefundCategory();
   migrateCategoryList();
@@ -230,6 +231,36 @@ function recheckCategories() {
     toast(`Re-categorized ${updated.length} transaction(s) ✓`, "ok");
     renderSettings();
   });
+}
+
+// If a recurring template went missing from settings (e.g. an old sync wiped
+// it) but its generated expenses are still in the store, rebuild the template
+// from them so it reappears in the Fixed tab. Skips templates the user
+// actually deleted (their id is tombstoned).
+async function recoverRecurringTemplates() {
+  const have = new Set((settings.recurring || []).map((t) => t.id));
+  const deleted = await getTombstones().catch(() => ({}));
+  const byRid = new Map();
+  for (const e of expenses) {
+    if (!e.recurringId || have.has(e.recurringId) || deleted[e.recurringId]) continue;
+    if (!byRid.has(e.recurringId)) byRid.set(e.recurringId, []);
+    byRid.get(e.recurringId).push(e);
+  }
+  if (!byRid.size) return;
+  const recovered = [];
+  for (const [rid, list] of byRid) {
+    list.sort((a, b) => a.date.localeCompare(b.date));
+    const rep = list[list.length - 1]; // latest = most current description/amount
+    recovered.push({
+      id: rid, description: rep.description, amount: Math.abs(Number(rep.amount) || 0),
+      currency: rep.currency || settings.baseCurrency, category: rep.category || "",
+      paidVia: rep.card || "Recurring", dayOfMonth: Number(rep.date.slice(8, 10)) || 1,
+      startMonth: list[0].date.slice(0, 7), active: true,
+    });
+  }
+  settings.recurring = [...(settings.recurring || []), ...recovered];
+  saveSettings(settings);
+  await markPrefsChanged();
 }
 
 // ---- Recurring monthly expenses ----
@@ -584,6 +615,9 @@ function renderAdd() {
     if (!confirm(`Delete "${t.description}" and its ${own.length} generated entr${own.length === 1 ? "y" : "ies"}?`)) return;
     settings.recurring = (settings.recurring || []).filter((x) => x.id !== t.id);
     saveSettings(settings); await markPrefsChanged();
+    // Tombstone the template id too, so sync doesn't resurrect it and boot
+    // recovery doesn't rebuild it from any lingering generated expense.
+    await recordDeletion(t.id);
     for (const e of own) { await deleteExpense(e.id); await recordDeletion(e.id); }
     expenses = await allExpenses(); scheduleSync(); renderAdd();
   }));
