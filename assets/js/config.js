@@ -68,7 +68,7 @@ export const CATEGORY_RULES = [
   [/yango|parkonic|zofeur|dubai smart government|\brta\b|\btfl\b|\bforest\b|uber|\bcareem\b|\bola\b|metro|taxi|fuel|petrol|adnoc|enoc|salik/i, "Transport"],
 
   // Travel
-  [/\bvfs\b|emirates|etihad|air ?india|indigo|flight|hotel|booking\.com|airbnb|makemytrip|kiwi/i, "Travel"],
+  [/\bvfs\b|emirates|etihad|air ?india|air ?arabia|wizz ?air|indigo|flight|hotel|booking\.com|airbnb|makemytrip|kiwi/i, "Travel"],
 
   // Bills & utilities
   [/e&\s?digital|etisalat|tasleem|addc|auh gas|\bdu bill\b|\bdewa\b|electricity|water|internet|mobile|recharge/i, "Bills & Utilities"],
@@ -86,7 +86,7 @@ export const CATEGORY_RULES = [
   [/mede?ror|medeor|pharmacy|hospital|clinic|aster|medcare|apollo|\bhealth\b|dr\.?\s/i, "Health"],
 
   // Shopping (generic, after specific Amazon/Noon groceries)
-  [/amazon|noon|flipkart|myntra|ikea|namshi|ajio|wh ?smith|store|shop/i, "Shopping"],
+  [/amazon|noon|flipkart|myntra|ikea|namshi|ajio|wh ?smith|asos|shein|6th ?street|6thstreet|store|shop/i, "Shopping"],
 
   // Entertainment
   [/vox|cinema|pvr|bookmyshow|game|steam|playstation/i, "Entertainment"],
