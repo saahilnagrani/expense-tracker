@@ -59,8 +59,14 @@ export const CATEGORY_RULES = [
   // Visa / immigration paperwork (typing centres, DWTC visa services)
   [/dubai world trade cent(er|re)|nypd typing/i, "Visa Fees"],
 
+  // Swiggy is used for both food delivery (statement category "RESTAURANTS")
+  // and groceries via Instamart ("DEPT STORES") — split on that category text,
+  // Groceries first so the generic Swiggy→Food Delivery rule doesn't grab it.
+  [/swiggy instamart|swiggy\b.*dept stores/i, "Groceries"],
+  [/swiggy/i, "Food Delivery"],
+
   // Food delivery (before Groceries / generic Careem, Noon)
-  [/careem food|talabat|noon food|keeta|deliveroo|hardees?|uber ?eats|swiggy/i, "Food Delivery"],
+  [/careem food|talabat|noon food|keeta|deliveroo|hardees?|uber ?eats/i, "Food Delivery"],
 
   // Groceries (specific merchants before generic Amazon/Noon → Shopping)
   [/amazon ?now|amazonufg|maf hyper|waitrose|sainsbury|tesco|asda|\bm&s\b|marks ?& ?spencer|careem deliveries|careem quik|al ain food|noon minutes|%\s?arabica|lulu|carrefour|spinneys|grocer|bigbasket|blinkit|zepto|instashop|supermarket/i, "Groceries"],
