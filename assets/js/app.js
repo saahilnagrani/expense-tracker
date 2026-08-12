@@ -587,6 +587,7 @@ function renderImport() {
         </div>
         ${connected ? `<div class="field" style="align-self:flex-end"><button class="btn secondary" id="disconnectBtn">Disconnect</button></div>` : ""}
       </div>
+      <label class="flex mt" style="gap:6px;cursor:pointer"><input type="checkbox" id="impReplace"> Re-import &amp; replace already-imported transactions <span class="hint">(re-applies the latest parsing/categories; overwrites those statements, including any manual edits on them)</span></label>
       <label class="flex mt" style="gap:6px;cursor:pointer"><input type="checkbox" id="impDebug"> Show raw statement text (debug — helps me fix parsing, e.g. missing cashback)</label>
       <div id="importLog" class="mt"></div>
     </div>
@@ -641,6 +642,7 @@ async function fetchAndParse() {
 
   const existing = await existingDedupeKeys();
   const debug = $("#impDebug")?.checked;
+  reviewReplace = !!$("#impReplace")?.checked;
   const debugRaw = [];
   const parsed = [];
   const problems = [];
@@ -735,9 +737,12 @@ async function fetchAndParse() {
 
 let reviewRows = [];
 let revFilter = { q: "", source: "", needsOnly: false, cat: "", merchant: "" };
+let reviewReplace = false; // "re-import & replace" mode chosen for this run
 
 function renderReview(rows, problems) {
-  const fresh = rows.filter((r) => !r._dup);
+  // Replace mode: show every parsed row (including already-imported ones) so
+  // they can overwrite the saved copies. Normal mode: hide already-imported.
+  const fresh = reviewReplace ? rows : rows.filter((r) => !r._dup);
   // Default: auto-select clean rows; leave "needs review" rows unticked so
   // you consciously include them after checking.
   fresh.forEach((r) => { if (r._sel === undefined) r._sel = !r.needsReview; });
@@ -768,7 +773,7 @@ function renderReview(rows, problems) {
       <button class="btn sm secondary" id="revNone">Clear shown</button>
       <button class="btn" id="revSave">Save selected</button>
     </div>
-    ${dupCount ? `<div class="hint mt">${dupCount} already-imported transaction(s) hidden.</div>` : ""}
+    ${reviewReplace ? `<div class="warnbox mt">Replace mode: saving will overwrite existing transactions from these statements with the freshly-parsed versions.</div>` : (dupCount ? `<div class="hint mt">${dupCount} already-imported transaction(s) hidden.</div>` : "")}
     ${problems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("")}
     <div class="flex mt">
       <input id="revSearch" placeholder="Search description / card…" style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)">
@@ -881,10 +886,25 @@ async function saveReview() {
     return e;
   }).filter((e) => e.amount > 0);
 
+  // Replace mode: wipe the previously-saved transactions from every statement
+  // we're re-importing, then insert the fresh ones. Scoped by Gmail message id
+  // so only the re-fetched statements are touched (manual/recurring rows and
+  // other statements are left alone).
+  let removed = 0;
+  if (reviewReplace) {
+    const msgIds = new Set(toSave.map((e) => e.gmailMessageId).filter(Boolean));
+    const stale = expenses.filter((e) => e.gmailMessageId && msgIds.has(e.gmailMessageId));
+    for (const e of stale) { await deleteExpense(e.id); await recordDeletion(e.id); }
+    removed = stale.length;
+  }
+
   await putMany(toSave);
   expenses = await allExpenses();
   scheduleSync();
-  toast(`Imported ${toSave.length} transaction(s) ✓`, "ok");
+  toast(reviewReplace
+    ? `Replaced ${removed} with ${toSave.length} transaction(s) ✓`
+    : `Imported ${toSave.length} transaction(s) ✓`, "ok");
+  reviewReplace = false;
   go("expenses");
 }
 
