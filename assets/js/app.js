@@ -568,7 +568,7 @@ function renderExpenses() {
         <select id="fmerchant" class="fsel" style="max-width:260px"><option value="">All merchants</option>${merchCounts.map(([m, n]) => `<option value="${esc(m)}" ${expFilter.merchant === m ? "selected" : ""}>${esc(m)} (${n})</option>`).join("")}</select>
         <button class="btn sm secondary" id="fclear">Clear</button>
         <span class="spacer"></span>
-        <button class="btn sm" id="expCsv">Export CSV</button>
+        <button class="btn sm secondary" id="expCsv" title="Export CSV" aria-label="Export CSV">⭳ CSV</button>
       </div>
       <div class="hint mt" id="expCount"></div>
       <div class="table-wrap mt">
