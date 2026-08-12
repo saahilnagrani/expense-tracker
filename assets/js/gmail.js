@@ -107,20 +107,47 @@ export function disconnect() {
   _tokenExpiry = 0;
 }
 
-async function api(path) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const backoff = (n) => Math.min(8000, 800 * 2 ** n);
+
+// Gmail GET with a per-request timeout and retries. Mobile browsers freeze a
+// backgrounded tab and silently drop its in-flight fetches (screen lock, app
+// switch), leaving the await hung forever — which is exactly what stalls an
+// import mid-way. An AbortController timeout turns that hang into a retryable
+// error, and transient 429/5xx responses are retried with backoff too.
+async function api(path, { tries = 4, timeoutMs = 30000 } = {}) {
   if (!isSignedIn()) throw new Error("Not connected to Gmail. Click Connect first.");
-  const res = await fetch(API + path, {
-    headers: { Authorization: "Bearer " + _accessToken },
-  });
-  if (res.status === 401) {
-    _accessToken = null;
-    throw new Error("Gmail session expired. Please connect again.");
+  const url = API + path;
+  const headers = { Authorization: "Bearer " + _accessToken };
+  let lastErr;
+  for (let attempt = 0; attempt < tries; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    let res;
+    try {
+      res = await fetch(url, { headers, signal: ctrl.signal });
+    } catch (e) {
+      // Aborted (timeout) or a dropped connection after backgrounding — retry.
+      clearTimeout(timer);
+      lastErr = e;
+      if (attempt < tries - 1) { await sleep(backoff(attempt)); continue; }
+      throw new Error("Network problem reaching Gmail — check your connection and try again.");
+    }
+    clearTimeout(timer);
+    if (res.status === 401) {
+      _accessToken = null;
+      throw new Error("Gmail session expired. Please connect again.");
+    }
+    if ([429, 500, 502, 503, 504].includes(res.status) && attempt < tries - 1) {
+      await sleep(backoff(attempt)); continue;
+    }
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`Gmail API error ${res.status}: ${body.slice(0, 200)}`);
+    }
+    return res.json();
   }
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Gmail API error ${res.status}: ${body.slice(0, 200)}`);
-  }
-  return res.json();
+  throw lastErr || new Error("Gmail request failed");
 }
 
 // List message ids matching a Gmail search query.

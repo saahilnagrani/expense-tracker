@@ -559,6 +559,24 @@ function renderImport() {
 
 function setLog(html) { const el = $("#importLog"); if (el) el.innerHTML = html; }
 
+// Keep the phone screen awake during an import so locking it doesn't suspend
+// the tab (and its in-flight requests). The lock is auto-released when the tab
+// is hidden, so re-acquire it whenever we come back while still importing.
+let _wakeLock = null;
+let _importing = false;
+async function keepAwake() {
+  try { if ("wakeLock" in navigator) _wakeLock = await navigator.wakeLock.request("screen"); } catch {}
+}
+async function releaseAwake() {
+  try { if (_wakeLock) await _wakeLock.release(); } catch {}
+  _wakeLock = null;
+}
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState === "visible" && _importing && !_wakeLock) {
+    try { _wakeLock = await navigator.wakeLock.request("screen"); } catch {}
+  }
+});
+
 async function fetchAndParse() {
   const chosen = SOURCES.filter((s) => settings.enabledSources.includes(s.bank));
   if (!chosen.length) return toast("Pick at least one source", "err");
@@ -614,19 +632,26 @@ async function fetchAndParse() {
     }
   }
 
-  for (const src of chosen) {
-    try {
-      const specs = [];
-      if (spLabel) {
-        if (!src.spouseOnly) specs.push({ labelQuery: `-label:"${spLabel}"`, cardLabel: src.label, password: settings.passwords[src.bank] || "", owner: "me" });
-        if (src.shared || src.spouseOnly) specs.push({ labelQuery: `label:"${spLabel}"`, cardLabel: `${src.label} (${spName})`, password: (settings.spousePasswords || {})[src.bank] || "", owner: "spouse" });
-      } else if (!src.spouseOnly) {
-        specs.push({ labelQuery: "", cardLabel: src.label, password: settings.passwords[src.bank] || "", owner: "me" });
+  _importing = true;
+  await keepAwake();
+  try {
+    for (const src of chosen) {
+      try {
+        const specs = [];
+        if (spLabel) {
+          if (!src.spouseOnly) specs.push({ labelQuery: `-label:"${spLabel}"`, cardLabel: src.label, password: settings.passwords[src.bank] || "", owner: "me" });
+          if (src.shared || src.spouseOnly) specs.push({ labelQuery: `label:"${spLabel}"`, cardLabel: `${src.label} (${spName})`, password: (settings.spousePasswords || {})[src.bank] || "", owner: "spouse" });
+        } else if (!src.spouseOnly) {
+          specs.push({ labelQuery: "", cardLabel: src.label, password: settings.passwords[src.bank] || "", owner: "me" });
+        }
+        for (const spec of specs) await runSpec(src, spec);
+      } catch (e) {
+        problems.push(`⚠️ ${src.label}: ${e.message}`);
       }
-      for (const spec of specs) await runSpec(src, spec);
-    } catch (e) {
-      problems.push(`⚠️ ${src.label}: ${e.message}`);
     }
+  } finally {
+    _importing = false;
+    await releaseAwake();
   }
 
   setLog("");
