@@ -457,6 +457,23 @@ function renderDashboard() {
       const lx = bx + barW / 2, ly = plotBottom + 12;
       g += `<text x="${lx}" y="${ly}" transform="rotate(-40 ${lx} ${ly})" text-anchor="end" font-size="10" fill="var(--muted)">${esc(fmtPeriod(pk, dashGran))}</text>`;
     });
+    // Mean & median reference lines across the per-period totals of the shown
+    // categories (i.e. the height of each stacked bar).
+    const totals = pers.map((pk) => showCats.reduce((s, c) => s + Math.max(0, byPeriodCat[pk]?.[c] || 0), 0));
+    if (totals.length) {
+      const mean = totals.reduce((a, b) => a + b, 0) / totals.length;
+      const sorted = [...totals].sort((a, b) => a - b), mid = Math.floor(sorted.length / 2);
+      const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      const refLine = (val, color, label, side) => {
+        const yy = y(val);
+        const tx = side === "right" ? svgW - right : left + 4;
+        const anchor = side === "right" ? "end" : "start";
+        return `<line x1="${left}" y1="${yy.toFixed(1)}" x2="${svgW - right}" y2="${yy.toFixed(1)}" stroke="${color}" stroke-width="1.5" stroke-dasharray="6 4"><title>${label}: ${settings.baseCurrency} ${num(val)}</title></line>`
+          + `<text x="${tx}" y="${(yy - 4).toFixed(1)}" text-anchor="${anchor}" font-size="10" font-weight="700" fill="${color}">${label} ${fmtShort(val)}</text>`;
+      };
+      g += refLine(mean, "var(--text)", "Mean", "left");
+      g += refLine(median, "var(--warn)", "Median", "right");
+    }
     g += `<line x1="${left}" y1="${plotBottom}" x2="${svgW - right}" y2="${plotBottom}" stroke="var(--border)" stroke-width="1.5"/>`;
     return `<svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" style="max-width:none;display:block">${g}</svg>`;
   };
