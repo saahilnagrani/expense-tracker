@@ -942,6 +942,9 @@ function renderImport() {
     </div>
     <div id="reviewArea" class="mt"></div>`;
 
+  // A fetch you haven't saved yet survives leaving and re-entering this tab.
+  if (reviewRows.length) paintReview();
+
   $("#toSettings")?.addEventListener("click", (e) => { e.preventDefault(); go("settings"); });
   $$(".srcChk").forEach((c) => c.addEventListener("change", () => {
     settings.enabledSources = $$(".srcChk").filter((x) => x.checked).map((x) => x.value);
@@ -1093,6 +1096,11 @@ let reviewRows = [];
 let revFilter = { q: "", source: "", needsOnly: false, cat: "", merchant: "" };
 let reviewReplace = false; // "re-import & replace" mode chosen for this run
 let revPage = 0;
+// Kept so the review can be redrawn when you leave the Import tab and come
+// back — the parsed rows live in memory, and losing the table (but not the
+// data) meant a fetch appeared to be thrown away.
+let reviewProblems = [];
+let reviewDupCount = 0;
 const REV_PAGE = 200; // render at most this many review rows at once (perf)
 
 function renderReview(rows, problems) {
@@ -1103,17 +1111,29 @@ function renderReview(rows, problems) {
   // you consciously include them after checking.
   fresh.forEach((r) => { if (r._sel === undefined) r._sel = !r.needsReview; });
   reviewRows = fresh;
+  reviewProblems = problems || [];
+  reviewDupCount = rows.length - fresh.length;
   revFilter = { q: "", source: "", needsOnly: false, cat: "", merchant: "" };
   revPage = 0;
-  const dupCount = rows.length - fresh.length;
-  const area = $("#reviewArea");
   if (!rows.length) {
-    area.innerHTML = `<div class="card">
-      ${problems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("") || ""}
+    $("#reviewArea").innerHTML = `<div class="card">
+      ${reviewProblems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("") || ""}
       <div class="empty"><div class="big">${icon("search",40)}</div><p class="muted">No transactions parsed. If you have statements, check that the PDF password is set in Settings.</p></div>
     </div>`;
     return;
   }
+  paintReview();
+}
+
+// Draw the review table from the current reviewRows. Split out of
+// renderReview so returning to the Import tab can redraw the pending review
+// without resetting selections, filters or the page.
+function paintReview() {
+  const area = $("#reviewArea");
+  if (!area || !reviewRows.length) return;
+  const fresh = reviewRows;
+  const problems = reviewProblems;
+  const dupCount = reviewDupCount;
   const sources = [...new Set(fresh.map((r) => r.card).filter(Boolean))].sort();
   const facet = (fn) => {
     const m = {};
@@ -1133,11 +1153,11 @@ function renderReview(rows, problems) {
     ${reviewReplace ? `<div class="warnbox mt">Replace mode: saving will overwrite existing transactions from these statements with the freshly-parsed versions.</div>` : (dupCount ? `<div class="hint mt">${dupCount} already-imported transaction(s) hidden.</div>` : "")}
     ${problems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("")}
     <div class="flex mt filters">
-      <input id="revSearch" placeholder="Search description / card…" style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)">
-      <select id="revSource" class="fsel"><option value="">All sources</option>${sources.map((s) => `<option>${esc(s)}</option>`).join("")}</select>
+      <input id="revSearch" placeholder="Search description / card…" value="${esc(revFilter.q)}" style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)">
+      <select id="revSource" class="fsel"><option value="">All sources</option>${sources.map((s) => `<option ${revFilter.source === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
       <select id="revCat" class="fsel"><option value="">All categories</option>${revCats.map(([c, n]) => `<option value="${esc(c)}" ${revFilter.cat === c ? "selected" : ""}>${esc(c)} (${n})</option>`).join("")}</select>
       <select id="revMerchant" class="fsel" style="max-width:240px"><option value="">All merchants</option>${revMerch.map(([m, n]) => `<option value="${esc(m)}" ${revFilter.merchant === m ? "selected" : ""}>${esc(m)} (${n})</option>`).join("")}</select>
-      <label class="flex" style="gap:6px;cursor:pointer"><input type="checkbox" id="revNeedsOnly"> Needs review only</label>
+      <label class="flex" style="gap:6px;cursor:pointer"><input type="checkbox" id="revNeedsOnly" ${revFilter.needsOnly ? "checked" : ""}> Needs review only</label>
       <span class="spacer"></span>
       <span class="hint" id="revCounts"></span>
     </div>
@@ -1290,6 +1310,8 @@ async function saveReview() {
     ? `Replaced ${removed} with ${toSave.length} transaction(s) ✓`
     : `Imported ${toSave.length} transaction(s) ✓`, "ok");
   reviewReplace = false;
+  // The review is done — don't restore it next time the Import tab opens.
+  reviewRows = []; reviewProblems = []; reviewDupCount = 0;
   go("expenses");
 }
 
