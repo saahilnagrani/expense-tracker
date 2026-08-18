@@ -189,6 +189,8 @@ table.pw-table tr.grouprow:first-child td { padding-top: 4px; }
 /* Empty state */
 .empty { text-align: center; color: var(--muted); padding: 48px 20px; }
 .empty .big { font-size: 40px; margin-bottom: 8px; }
+.empty h3 { margin: 4px 0 8px; font-size: 17px; color: var(--text); }
+.empty p { margin: 4px auto; max-width: 46ch; }
 
 /* Toast */
 .toast {

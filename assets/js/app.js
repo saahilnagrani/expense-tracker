@@ -1006,6 +1006,9 @@ async function fetchAndParse() {
   const debugRaw = [];
   const parsed = [];
   const problems = [];
+  // Counted so an empty result can explain itself: no emails found is a very
+  // different outcome from emails found but nothing readable.
+  const stats = { emails: 0, pdfs: 0 };
   $("#reviewArea").innerHTML = "";
 
   const spLabel = settings.spouseEnabled && settings.spouseLabel ? settings.spouseLabel : "";
@@ -1016,6 +1019,7 @@ async function fetchAndParse() {
     const q = `from:${src.from} ${src.query || ""} ${spec.labelQuery || ""} has:attachment filename:pdf after:${afterStr}`.replace(/\s+/g, " ").trim();
     setLog(`Searching ${esc(spec.cardLabel)}…`);
     const ids = await GM.searchMessages(q, 60);
+    stats.emails += ids.length;
     setLog(`Found ${ids.length} statement email(s) for ${esc(spec.cardLabel)}. Reading…`);
     for (let i = 0; i < ids.length; i++) {
       setLog(`${esc(spec.cardLabel)}: reading statement ${i + 1}/${ids.length}…`);
@@ -1029,6 +1033,7 @@ async function fetchAndParse() {
           const bytes = await GM.getAttachment(ids[i], att.attachmentId);
           const { lines } = await extractText(bytes, spec.password || "");
           if (debug) debugRaw.push({ label: spec.cardLabel, filename: att.filename, lines });
+          stats.pdfs++;
           rows.push(...parseStatementByBank(src.bank, lines, { currency: src.currency, card: spec.cardLabel }));
         } catch (err) {
           if (err instanceof PdfPasswordError) {
@@ -1089,7 +1094,7 @@ async function fetchAndParse() {
   }
 
   setLog("");
-  renderReview(parsed, problems);
+  renderReview(parsed, problems, stats);
   if (debug && debugRaw.length) {
     const block = debugRaw.map((d) =>
       `<details style="margin-top:10px"><summary style="cursor:pointer">${esc(d.label)} — ${esc(d.filename)} (${d.lines.length} lines)</summary>` +
@@ -1148,7 +1153,7 @@ async function restorePendingReview() {
 }
 const REV_PAGE = 200; // render at most this many review rows at once (perf)
 
-function renderReview(rows, problems) {
+function renderReview(rows, problems, stats = {}) {
   // Replace mode: show every parsed row (including already-imported ones) so
   // they can overwrite the saved copies. Normal mode: hide already-imported.
   const fresh = reviewReplace ? rows : rows.filter((r) => !r._dup);
@@ -1162,14 +1167,39 @@ function renderReview(rows, problems) {
   revFilter = { q: "", source: "", needsOnly: false, cat: "", merchant: "" };
   revPage = 0;
   persistReview();
-  if (!rows.length) {
+
+  // Nothing to review is a normal outcome, not a no-op: say which one it was.
+  // (Previously an all-duplicates fetch rendered nothing at all, so a run that
+  // worked perfectly looked identical to one that silently failed.)
+  if (!fresh.length) {
+    const emails = stats.emails || 0;
+    let body, note;
+    if (reviewDupCount > 0) {
+      note = "Nothing new — already imported";
+      body = `<div class="big">${icon("check", 40)}</div>
+        <h3>You're up to date</h3>
+        <p class="muted">Read ${emails} statement email(s) and found ${rows.length} transaction(s) — every one is already imported, so there's nothing new to review.</p>
+        <p class="hint">To parse them again anyway (say, after changing category rules), tick <b>Re-import &amp; replace</b> above and fetch again.</p>`;
+    } else if (!emails) {
+      note = "No statement emails found";
+      body = `<div class="big">${icon("search", 40)}</div>
+        <h3>No statement emails found</h3>
+        <p class="muted">Nothing matched the selected sources in the last ${settings.lookbackMonths} months. Try a longer look-back, or check which cards are ticked above.</p>`;
+    } else {
+      note = "No transactions could be parsed";
+      body = `<div class="big">${icon("alert", 40)}</div>
+        <h3>No transactions parsed</h3>
+        <p class="muted">Read ${emails} statement email(s)${stats.pdfs ? ` and opened ${stats.pdfs} PDF(s)` : ""}, but couldn't pull any transactions out. If the PDFs are password-protected, add the password in Settings.</p>`;
+    }
     $("#reviewArea").innerHTML = `<div class="card">
-      ${reviewProblems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("") || ""}
-      <div class="empty"><div class="big">${icon("search",40)}</div><p class="muted">No transactions parsed. If you have statements, check that the PDF password is set in Settings.</p></div>
+      ${reviewProblems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("")}
+      <div class="empty">${body}</div>
     </div>`;
+    toast(note, reviewDupCount > 0 ? "ok" : "err");
     return;
   }
   paintReview();
+  toast(`${fresh.length} new transaction(s) to review`, "ok");
 }
 
 // Draw the review table from the current reviewRows. Split out of
