@@ -544,27 +544,30 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
   .tbl-exp td[colspan], .tbl-rev td[colspan] { padding: 12px 0 !important; }
 
   /* ---- Expenses: bespoke 3-line card ---- */
+  /* A 12-column track with explicit placement. `auto` columns size to their
+     content, so a long card name in the footer starved the description column
+     down to a few pixels — fixed proportions can't do that. */
   .tbl-exp tbody tr {
-    display: grid; column-gap: 10px; row-gap: 4px; align-items: center;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    grid-template-areas:
-      "desc  amt   amt"
-      "cat   spend spend"
-      "date  src   del";
+    display: grid; grid-template-columns: repeat(12, 1fr);
+    column-gap: 8px; row-gap: 6px; align-items: center;
   }
-  .tbl-exp td[data-c="desc"] { grid-area: desc; min-width: 0; overflow-wrap: anywhere; font-weight: 700; font-size: 15px; }
-  .tbl-exp td[data-c="amt"]  { grid-area: amt; justify-self: end; align-self: start; font-weight: 700; white-space: nowrap; }
-  .tbl-exp td[data-c="cat"]  { grid-area: cat; justify-self: start; }
-  .tbl-exp td[data-c="spend"]{ grid-area: spend; justify-self: end; }
+  .data.tbl-exp td { min-width: 0; }
+  .tbl-exp td[data-c="desc"] { grid-row: 1; grid-column: 1 / span 7; overflow-wrap: break-word; font-weight: 700; font-size: 15px; }
+  .tbl-exp td[data-c="amt"]  { grid-row: 1; grid-column: 8 / -1; justify-self: end; align-self: start; font-weight: 700; white-space: nowrap; }
+  .tbl-exp td[data-c="cat"]  { grid-row: 2; grid-column: 1 / span 6; justify-self: start; }
+  .tbl-exp td[data-c="spend"]{ grid-row: 2; grid-column: 7 / -1; justify-self: end; }
   /* the card/source sits under the spend chip, sharing the footer row with
      the date and delete so it doesn't cost a line of its own */
-  .tbl-exp td[data-c="src"]  { grid-area: src; justify-self: end; text-align: right; min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: 12px; }
+  .tbl-exp td[data-c="src"]  { grid-row: 3; grid-column: 5 / span 6; justify-self: end; text-align: right; overflow-wrap: break-word; color: var(--muted); font-size: 12px; }
   .tbl-exp td[data-c="base"] { display: none; }
   .tbl-exp td[data-c="date"], .tbl-exp td[data-c="src"], .tbl-exp td[data-c="del"] {
     border-top: 1px solid var(--border); padding-top: 9px; margin-top: 3px;
   }
-  .tbl-exp td[data-c="date"] { grid-area: date; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
-  .tbl-exp td[data-c="del"]  { grid-area: del; justify-self: end; }
+  .tbl-exp td[data-c="date"] { grid-row: 3; grid-column: 1 / span 4; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  .tbl-exp td[data-c="del"]  { grid-row: 3; grid-column: 11 / -1; justify-self: end; }
+  /* "statement" is the default source and eats a lot of a narrow footer;
+     the exceptional ones (manual / recurring / alert) still show. */
+  .tbl-exp td[data-c="src"] .chip.src-statement { display: none; }
   /* keep right padding so the label doesn't run under the chevron */
   .tbl-exp td[data-c="cat"] .cs-btn { min-height: 34px; padding: 5px 28px 5px 10px; }
 
