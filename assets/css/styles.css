@@ -542,34 +542,58 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
   /* ---- Expenses: bespoke 3-line card ---- */
   .tbl-exp tbody tr {
     display: grid; column-gap: 10px; row-gap: 4px; align-items: center;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     grid-template-areas:
-      "desc  amt"
-      "cat   spend"
-      "src   src"
-      "date  del";
+      "desc  amt   amt"
+      "cat   spend spend"
+      "date  src   del";
   }
   .tbl-exp td[data-c="desc"] { grid-area: desc; min-width: 0; overflow-wrap: anywhere; font-weight: 700; font-size: 15px; }
   .tbl-exp td[data-c="amt"]  { grid-area: amt; justify-self: end; align-self: start; font-weight: 700; white-space: nowrap; }
   .tbl-exp td[data-c="cat"]  { grid-area: cat; justify-self: start; }
   .tbl-exp td[data-c="spend"]{ grid-area: spend; justify-self: end; }
-  .tbl-exp td[data-c="src"]  { grid-area: src; min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: 12.5px; }
+  /* the card/source sits under the spend chip, sharing the footer row with
+     the date and delete so it doesn't cost a line of its own */
+  .tbl-exp td[data-c="src"]  { grid-area: src; justify-self: end; text-align: right; min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: 12px; }
   .tbl-exp td[data-c="base"] { display: none; }
-  .tbl-exp td[data-c="date"], .tbl-exp td[data-c="del"] {
+  .tbl-exp td[data-c="date"], .tbl-exp td[data-c="src"], .tbl-exp td[data-c="del"] {
     border-top: 1px solid var(--border); padding-top: 9px; margin-top: 3px;
   }
-  .tbl-exp td[data-c="date"] { grid-area: date; color: var(--muted); font-size: 12.5px; }
+  .tbl-exp td[data-c="date"] { grid-area: date; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
   .tbl-exp td[data-c="del"]  { grid-area: del; justify-self: end; }
   /* keep right padding so the label doesn't run under the chevron */
   .tbl-exp td[data-c="cat"] .cs-btn { min-height: 34px; padding: 5px 28px 5px 10px; }
 
-  /* ---- Import review: label : value rows ---- */
-  .tbl-rev td[data-c]:not([data-c="sel"]):not([data-c="desc"]) {
-    display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0;
+  /* ---- Import review card ---- */
+  /* A 12-column track so each row can split independently — a shared `auto`
+     column would force the checkbox as wide as the Amount field below it. */
+  .tbl-rev tbody tr {
+    display: grid; grid-template-columns: repeat(12, 1fr);
+    column-gap: 8px; row-gap: 7px; align-items: center;
   }
+  .data.tbl-rev td { display: flex; align-items: center; gap: 10px; padding: 0; }
   .tbl-rev td[data-label]::before {
     content: attr(data-label); color: var(--muted); font-size: 12.5px; font-weight: 600; flex: none;
   }
+  /* placed explicitly: the cells are in table order (date precedes
+     description), which is not the order the card reads in */
+  .tbl-rev td[data-c="sel"]  { grid-row: 1; grid-column: 1 / span 1; }
+  .tbl-rev td[data-c="desc"] { grid-row: 1; grid-column: 2 / -1; }
+  .tbl-rev td[data-c="desc"] input { width: 100%; min-width: 0 !important; }
+  .tbl-rev td[data-c="date"] { grid-row: 2; grid-column: 1 / -1; justify-content: space-between; }
+  .tbl-rev td[data-c="amt"]  { grid-row: 3; grid-column: 1 / span 6; }
+  .tbl-rev td[data-c="amt"] input { width: 100%; min-width: 0; }
+  /* currency reads as a unit on the amount, not a row of its own */
+  .tbl-rev td[data-c="cur"]  { grid-row: 3; grid-column: 7 / -1; color: var(--muted); font-weight: 600; }
+  /* Type + Category share one row; the controls say what they are */
+  .tbl-rev td[data-c="kind"] { grid-row: 4; grid-column: 1 / span 6; }
+  .tbl-rev td[data-c="cat"]  { grid-row: 4; grid-column: 7 / -1; }
+  .tbl-rev td[data-c="cur"]::before,
+  .tbl-rev td[data-c="kind"]::before,
+  .tbl-rev td[data-c="cat"]::before { content: none; }
+  .tbl-rev td[data-c="kind"] .cs-btn, .tbl-rev td[data-c="cat"] .cs-btn { width: 100%; min-width: 0 !important; }
+  .tbl-rev td[data-c="src"]  { grid-row: 5; grid-column: 1 / -1; justify-content: space-between; }
+  .tbl-rev td[data-c="rev"]  { grid-row: 6; grid-column: 1 / -1; justify-content: space-between; }
 
   /* ---- Fixed monthly: compact 2-column info card (label above value) ---- */
   .tbl-fixed tbody tr {
@@ -595,15 +619,4 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
     border-top: 1px solid var(--border); padding-top: 10px;
   }
 
-  /* ---- Import review: checkbox + description header, then labelled fields ---- */
-  .tbl-rev tbody tr {
-    display: grid; grid-template-columns: auto 1fr; column-gap: 10px; row-gap: 2px; align-items: center;
-  }
-  .tbl-rev td[data-c="sel"]  { grid-column: 1; }
-  .tbl-rev td[data-c="desc"] { grid-column: 2; }
-  .tbl-rev td[data-c="desc"] input { width: 100%; min-width: 0 !important; }
-  .tbl-rev td[data-c]:not([data-c="sel"]):not([data-c="desc"]) {
-    grid-column: 1 / -1; border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); padding-top: 6px;
-  }
-  .tbl-rev td[data-c="amt"] input { width: 120px; }
 }
