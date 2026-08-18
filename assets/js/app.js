@@ -2,6 +2,7 @@
 import {
   allExpenses, putExpense, putMany, deleteExpense, clearAll,
   existingDedupeKeys, loadSettings, saveSettings, uid, recordDeletion, getTombstones,
+  getMeta, setMeta,
 } from "./db.js";
 import { syncNow, markPrefsChanged, lastSyncedAt } from "./sync.js";
 import { SOURCES, DEFAULT_CATEGORIES } from "./config.js";
@@ -45,6 +46,12 @@ function fmtMonth(ym) { // "2026-01" -> "Jan 2026"
   return (p.length >= 2 && p[0] && p[1]) ? `${MON[p[1] - 1]} ${p[0]}` : (ym || "");
 }
 function fmtPeriod(pk, gran) { return gran === "month" ? fmtMonth(pk) : pk; }
+function fmtDateTime(ms) { // epoch ms -> "23 Jan 2026, 14:05"
+  const d = new Date(ms);
+  if (isNaN(d)) return "";
+  const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}, ${t}`;
+}
 
 // Add a category to the single shared list (settings.categories) so it shows
 // up everywhere — Expenses, Import review and Settings all read this list, and
@@ -112,6 +119,7 @@ function spendBase(e) {
 // ---------- boot ----------
 async function boot() {
   expenses = await allExpenses();
+  await restorePendingReview(); // an unsaved fetch survives a reload
   await recoverRecurringTemplates();
   await materializeRecurring();
   await migrateRefundCategory();
@@ -1101,6 +1109,43 @@ let revPage = 0;
 // data) meant a fetch appeared to be thrown away.
 let reviewProblems = [];
 let reviewDupCount = 0;
+let reviewFetchedAt = 0;
+
+// ...and mirrored to IndexedDB so a reload (or the phone evicting the tab)
+// doesn't throw away an unsaved fetch either. Debounced: editing a field or
+// ticking a row would otherwise rewrite the whole batch on every keystroke.
+const PENDING_KEY = "pendingReview";
+let _pendTimer;
+function persistReview() {
+  clearTimeout(_pendTimer);
+  _pendTimer = setTimeout(async () => {
+    try {
+      if (!reviewRows.length) { await setMeta(PENDING_KEY, null); return; }
+      await setMeta(PENDING_KEY, {
+        rows: reviewRows, problems: reviewProblems, dup: reviewDupCount,
+        replace: reviewReplace, filter: revFilter, page: revPage, fetchedAt: reviewFetchedAt,
+      });
+    } catch { /* quota or private-mode — the in-memory review still works */ }
+  }, 400);
+}
+function clearPendingReview() {
+  reviewRows = []; reviewProblems = []; reviewDupCount = 0; reviewFetchedAt = 0;
+  clearTimeout(_pendTimer);
+  setMeta(PENDING_KEY, null).catch(() => {});
+}
+async function restorePendingReview() {
+  try {
+    const p = await getMeta(PENDING_KEY);
+    if (!p || !Array.isArray(p.rows) || !p.rows.length) return;
+    reviewRows = p.rows;
+    reviewProblems = p.problems || [];
+    reviewDupCount = p.dup || 0;
+    reviewReplace = !!p.replace;
+    revFilter = p.filter || { q: "", source: "", needsOnly: false, cat: "", merchant: "" };
+    revPage = p.page || 0;
+    reviewFetchedAt = p.fetchedAt || 0;
+  } catch { /* ignore — just start with no pending review */ }
+}
 const REV_PAGE = 200; // render at most this many review rows at once (perf)
 
 function renderReview(rows, problems) {
@@ -1113,8 +1158,10 @@ function renderReview(rows, problems) {
   reviewRows = fresh;
   reviewProblems = problems || [];
   reviewDupCount = rows.length - fresh.length;
+  reviewFetchedAt = Date.now();
   revFilter = { q: "", source: "", needsOnly: false, cat: "", merchant: "" };
   revPage = 0;
+  persistReview();
   if (!rows.length) {
     $("#reviewArea").innerHTML = `<div class="card">
       ${reviewProblems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("") || ""}
@@ -1148,8 +1195,11 @@ function paintReview() {
       <span class="spacer"></span>
       <button class="btn sm secondary" id="revAll">Select shown</button>
       <button class="btn sm secondary" id="revNone">Clear shown</button>
+      <button class="btn sm secondary" id="revDiscard">Discard</button>
       <button class="btn" id="revSave">Save selected</button>
     </div>
+    ${reviewFetchedAt && Date.now() - reviewFetchedAt > 60000
+      ? `<div class="hint mt">Unsaved fetch from ${esc(fmtDateTime(reviewFetchedAt))} — still here, nothing has been saved yet.</div>` : ""}
     ${reviewReplace ? `<div class="warnbox mt">Replace mode: saving will overwrite existing transactions from these statements with the freshly-parsed versions.</div>` : (dupCount ? `<div class="hint mt">${dupCount} already-imported transaction(s) hidden.</div>` : "")}
     ${problems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("")}
     <div class="flex mt filters">
@@ -1173,15 +1223,22 @@ function paintReview() {
     <div id="revPager" class="flex mt" style="align-items:center;gap:10px"></div>
   </div>`;
 
-  const reset = () => { revPage = 0; renderRevBody(); };
+  const reset = () => { revPage = 0; renderRevBody(); persistReview(); };
   // .fsel styled via CSS
   $("#revSearch").addEventListener("input", (e) => { revFilter.q = e.target.value; reset(); });
   $("#revSource").addEventListener("change", (e) => { revFilter.source = e.target.value; reset(); });
   $("#revCat").addEventListener("change", (e) => { revFilter.cat = e.target.value; reset(); });
   $("#revMerchant").addEventListener("change", (e) => { revFilter.merchant = e.target.value; reset(); });
   $("#revNeedsOnly").addEventListener("change", (e) => { revFilter.needsOnly = e.target.checked; reset(); });
-  $("#revAll").addEventListener("click", () => { filteredRev().forEach(({ r }) => (r._sel = true)); renderRevBody(); });
-  $("#revNone").addEventListener("click", () => { filteredRev().forEach(({ r }) => (r._sel = false)); renderRevBody(); });
+  $("#revAll").addEventListener("click", () => { filteredRev().forEach(({ r }) => (r._sel = true)); renderRevBody(); persistReview(); });
+  $("#revNone").addEventListener("click", () => { filteredRev().forEach(({ r }) => (r._sel = false)); renderRevBody(); persistReview(); });
+  $("#revDiscard").addEventListener("click", () => {
+    if (!confirm(`Discard these ${reviewRows.length} parsed transaction(s) without saving?`)) return;
+    reviewReplace = false;
+    clearPendingReview();
+    renderImport();
+    toast("Parsed transactions discarded", "ok");
+  });
   $("#revSave").addEventListener("click", saveReview);
   renderRevBody();
 }
@@ -1229,11 +1286,13 @@ function renderRevBody() {
       return;
     }
     reviewRows[i][f] = f === "amount" ? parseFloat(el.value) : el.value;
+    persistReview();
   }));
   body.querySelectorAll(".revChk").forEach((c) => c.addEventListener("change", () => {
     const i = +c.dataset.i;
     if (reviewRows[i]) reviewRows[i]._sel = c.checked;
     updateRevCounts();
+    persistReview();
   }));
   // Formatted date, tap to edit: swap in a date input, commit on change/blur.
   body.querySelectorAll(".revdate").forEach((td) => td.addEventListener("click", () => {
@@ -1243,7 +1302,7 @@ function renderRevBody() {
     td.innerHTML = `<input type="date" class="cellin" value="${r.date}" style="width:150px">`;
     const inp = td.querySelector("input");
     inp.focus();
-    const commit = () => { if (inp.value) r.date = inp.value; td.innerHTML = `<span style="border-bottom:1px dotted var(--border)">${fmtDate(r.date)}</span>`; };
+    const commit = () => { if (inp.value) r.date = inp.value; persistReview(); td.innerHTML = `<span style="border-bottom:1px dotted var(--border)">${fmtDate(r.date)}</span>`; };
     inp.addEventListener("change", commit);
     inp.addEventListener("blur", commit);
   }));
@@ -1311,7 +1370,7 @@ async function saveReview() {
     : `Imported ${toSave.length} transaction(s) ✓`, "ok");
   reviewReplace = false;
   // The review is done — don't restore it next time the Import tab opens.
-  reviewRows = []; reviewProblems = []; reviewDupCount = 0;
+  clearPendingReview();
   go("expenses");
 }
 
