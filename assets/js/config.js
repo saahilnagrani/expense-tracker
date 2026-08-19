@@ -54,7 +54,7 @@ export const CATEGORY_RULES = [
   [/cash\s?-?back|reward\s?redemption/i, "Cashback"],
 
   // Sports & fitness (padel/tennis courts, gyms, booking apps)
-  [/matchi|padel|\bpadel\b|tennis|squash|\bgym\b|fitness ?first|climbing|crossfit/i, "Sports"],
+  [/matchi|padel|\bpadel\b|tennis|squash|\bgym\b|fitness ?first|climbing|crossfit|cult\.?fit|cure\.?fit/i, "Sports"],
 
   // Visa / immigration paperwork (typing centres, DWTC visa services)
   [/dubai world trade cent(er|re)|nypd typing/i, "Visa Fees"],
@@ -66,46 +66,46 @@ export const CATEGORY_RULES = [
   [/swiggy/i, "Food Delivery"],
 
   // Food delivery (before Groceries / generic Careem, Noon)
-  [/careem food|talabat|noon food|keeta|deliveroo|hardees?|uber ?eats/i, "Food Delivery"],
+  [/careem food|talabat|noon food|keeta|deliveroo|hardees?|uber ?eats|zomato|eatsure|faasos|box8|behrouz|ovenstory/i, "Food Delivery"],
 
   // Groceries (specific merchants before generic Amazon/Noon → Shopping)
-  [/amazon ?now|amazonufg|maf hyper|waitrose|sainsbury|tesco|asda|\bm&s\b|marks ?& ?spencer|careem deliveries|careem quik|al ain food|noon minutes|%\s?arabica|lulu|carrefour|spinneys|grocer|bigbasket|blinkit|zepto|instashop|supermarket|bloomy/i, "Groceries"],
+  [/amazon ?now|amazonufg|maf hyper|waitrose|sainsbury|tesco|asda|\bm&s\b|marks ?& ?spencer|careem deliveries|careem quik|al ain food|noon minutes|%\s?arabica|lulu|carrefour|spinneys|grocer|bigbasket|blinkit|zepto|instashop|supermarket|bloomy|dmart|d-?mart|jiomart|reliance fresh|reliance smart|more retail|licious|country delight|milkbasket|natures basket|spencers|star bazaar/i, "Groceries"],
 
   // Restaurants / bars / pubs / dining (bars & pubs → Food & Dining too)
   [/mcdonald|five guys|quick snack selling|royal catering|caribou coffee|coffee house|madang|kfc|starbucks|restauran|\bcafe\b|dining|\bpub\b|\bbar\b|tavern|brasserie|bistro|gastropub/i, "Food & Dining"],
 
   // Transport (TfL, e-bikes like Forest, ride-hail, fuel, tolls, car washes)
-  [/yango|parkonic|zofeur|dubai smart government|\brta\b|\btfl\b|\bforest\b|uber|\bcareem\b|\bola\b|metro|taxi|fuel|petrol|adnoc|enoc|salik|wash/i, "Transport"],
+  [/yango|parkonic|zofeur|dubai smart government|\brta\b|\btfl\b|\bforest\b|uber|\bcareem\b|\bola\b|metro|taxi|fuel|petrol|adnoc|enoc|salik|wash|rapido|namma yatri|blusmart|fastag|indian oil|\biocl\b|bharat petroleum|\bbpcl\b|\bhpcl\b|shell/i, "Transport"],
 
   // Travel
-  [/\bvfs\b|emirates|etihad|air ?india|air ?arabia|wizz ?air|indigo|flight|hotel|booking\.com|airbnb|makemytrip|kiwi/i, "Travel"],
+  [/\bvfs\b|emirates|etihad|air ?india|air ?arabia|wizz ?air|indigo|flight|hotel|booking\.com|airbnb|makemytrip|kiwi|irctc|redbus|\boyo\b|goibibo|cleartrip|ixigo|yatra|vistara|spicejet|akasa|easemytrip/i, "Travel"],
 
   // Bills & utilities
-  [/e&\s?digital|etisalat|tasleem|addc|auh gas|\bdu bill\b|\bdewa\b|myjio|\bjio\b|electricity|water|internet|mobile|recharge/i, "Bills & Utilities"],
+  [/e&\s?digital|etisalat|tasleem|addc|auh gas|\bdu bill\b|\bdewa\b|myjio|\bjio\b|electricity|water|internet|mobile|recharge|airtel|vodafone idea|tata power|adani electricity|\bbses\b|mahanagar gas|act fibernet|hathway|torrent power|bescom|postpaid|\bdth\b|tata play/i, "Bills & Utilities"],
 
   // Subscriptions
-  [/linkedin|apple\.com\/bill|itunes|netflix|spotify|prime|youtube|hotstar|disney|icloud|google one|openai|anthropic|claude|chatgpt|adobe|notion|canva|expressvpn|\bvpn\b/i, "Subscriptions"],
+  [/linkedin|apple\.com\/bill|itunes|netflix|spotify|prime|youtube|hotstar|disney|icloud|google one|openai|anthropic|claude|chatgpt|adobe|notion|canva|expressvpn|\bvpn\b|sonyliv|zee5|jiocinema|jiohotstar|jiosaavn|gaana|audible/i, "Subscriptions"],
 
   // Beauty
-  [/urbanclap|urban company|\bsalon\b|\bspa\b|beauty|aynan/i, "Beauty"],
+  [/urbanclap|urban company|\bsalon\b|\bspa\b|beauty|aynan|nykaa|lakme|enrich|naturals salon/i, "Beauty"],
 
   // Housing / rent
   [/asteco|property mgt|property management|\brent\b|ejari/i, "Housing"],
 
   // Health (word-bounded to avoid HOSPITALITY→hospital and MASTER→aster)
-  [/mede?ror|medeor|pharmacy|\bhospital\b|\bclinic\b|\baster\b|medcare|\bapollo\b|\bhealth\b|dr\.?\s/i, "Health"],
+  [/mede?ror|medeor|pharmacy|\bhospital\b|\bclinic\b|\baster\b|medcare|\bapollo\b|\bhealth\b|dr\.?\s|pharmeasy|netmeds|\b1mg\b|tata 1mg|practo|medplus|fortis|max healthcare|manipal|wellness forever/i, "Health"],
 
   // Shopping (generic, after specific Amazon/Noon groceries)
-  [/amazon|noon|flipkart|myntra|ikea|namshi|ajio|wh ?smith|asos|shein|6th ?street|6thstreet|store|shop/i, "Shopping"],
+  [/amazon|noon|flipkart|myntra|ikea|namshi|ajio|wh ?smith|asos|shein|6th ?street|6thstreet|meesho|tatacliq|tata cliq|croma|reliance digital|decathlon|lenskart|snapdeal|firstcry|store|shop/i, "Shopping"],
 
   // Entertainment
-  [/vox|cinema|pvr|bookmyshow|game|steam|playstation/i, "Entertainment"],
+  [/vox|cinema|pvr|bookmyshow|\binox\b|game|steam|playstation/i, "Entertainment"],
 
   // Fees (precise — avoid bare "fee" which would catch "coffee")
   [/interest|finance charge|late fee|annual fee|foreign transaction fee|foreign currency transaction|foreign exchange|service fee|markup|\bvat\b|\bgst\b/i, "Fees & Interest"],
 
   // Cash / transfers
-  [/\batm\b|cash withdrawal|neft|imps|\bupi\b|transfer/i, "Cash & Transfers"],
+  [/\batm\b|cash withdrawal|neft|imps|\brtgs\b|\bupi\b|transfer/i, "Cash & Transfers"],
 ];
 
 // Known senders that email statements as PDF attachments. `kind` is always
