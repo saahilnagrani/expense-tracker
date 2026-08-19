@@ -568,7 +568,15 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
   .tbl-exp td[data-c="spend"]{ grid-row: 2; grid-column: 7 / -1; justify-self: end; }
   /* the card/source sits under the spend chip, sharing the footer row with
      the date and delete so it doesn't cost a line of its own */
-  .tbl-exp td[data-c="src"]  { grid-row: 3; grid-column: 5 / span 6; justify-self: end; text-align: right; overflow-wrap: break-word; color: var(--muted); font-size: 12px; }
+  /* Left-aligned and kept to a single line: a long card name scrolls
+     sideways inside its own cell rather than wrapping and growing the card. */
+  .tbl-exp td[data-c="src"] {
+    grid-row: 3; grid-column: 5 / span 6; justify-self: stretch; text-align: left;
+    white-space: nowrap; overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    color: var(--muted); font-size: 12px;
+  }
+  .tbl-exp td[data-c="src"]::-webkit-scrollbar { display: none; }
   .tbl-exp td[data-c="base"] { display: none; }
   /* One divider drawn across the whole row. Bordering the three footer cells
      individually left gaps at each column gutter, and since the cells are
