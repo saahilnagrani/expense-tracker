@@ -85,6 +85,9 @@ const AMT_RE = /(?:INR|Rs\.?|₹|AED)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i;
 const CREDIT_RE = /\b(credited|received|refund(?:ed)?|reversed|reversal|deposit(?:ed)?|cashback)\b/i;
 const DEBIT_RE = /\b(debited|spent|paid|withdrawn|purchase|charged|sent|transferred)\b/i;
 const UPI_REF_RE = /\bUPI[\s\/:-]*(?:transaction\s*)?(?:Ref(?:erence)?\.?\s*(?:No\.?|Number|ID)?)[\s:.#\/-]*([0-9]{9,22})\b/i;
+// ICICI names it a Transaction ID; Axis embeds it in "UPI/P2A/<ref>/PAYEE".
+const TXN_ID_RE = /\b(?:Transaction|Txn)\s*(?:ID|No\.?|Number)[\s:.#-]*([0-9]{9,22})\b/i;
+const UPI_PATH_REF_RE = /\bUPI\/(?:P2[AMP]|DR|CR|MOB)\/([0-9]{9,22})\//i;
 const LAST4_RE = /(?:x{2,}|\*{2,}|ending(?:\s+(?:with|in))?|no\.?|card|a\/c|account)[\s:#]*(?:x|\*)*([0-9]{4})\b/i;
 const VPA_RE = /\b([a-z0-9][a-z0-9._-]{1,40}@[a-z]{2,20})\b/i;
 // "Not a transaction" mail that can still slip through a from: filter. Kept
@@ -116,20 +119,40 @@ function alertDate(text) {
   return "";
 }
 
+// A captured candidate still needs cleaning: Axis labels its UPI narration
+// "Transaction Info:", so the capture is the whole UPI string; ICICI names no
+// merchant at all and the capture runs into the account number.
+function cleanPayee(cand) {
+  let s = String(cand || "").trim();
+  if (!s) return "";
+  if (/\bupi\b/i.test(s) && s.includes("/")) s = upiPayee(s) || s;
+  s = s.replace(/\b(?:from|to)?\s*your\s+(?:account|a\/c|card)\b.*$/i, "").trim();
+  s = s.replace(/\bx{3,}\d+\b/ig, "").replace(/\s+/g, " ").trim();
+  // A bare rail name is not a payee — better to flag it for review.
+  if (!s || /^(upi|neft|imps|rtgs|payment|txn|transaction|vpa)$/i.test(s)) return "";
+  return s;
+}
+
 // Pull the merchant/payee out of an alert body, most reliable cue first.
 function alertPayee(text) {
-  let m = text.match(/\b(?:to\s+VPA|VPA)\s+([a-z0-9][a-z0-9._-]{1,40}@[a-z]{2,20})/i);
-  if (m) return m[1].split("@")[0];
-  m = text.match(/\bInfo\s*[:\-]\s*([^\n;.]{2,60})/i);            // ICICI
-  if (m) return m[1].trim();
+  // A readable name in brackets right after the VPA beats the handle itself.
+  let m = text.match(/\b(?:to\s+VPA|VPA)\s+[a-z0-9][a-z0-9._-]{1,40}@[a-z]{2,20}\s*\(([^)]{2,60})\)/i);
+  if (m) return cleanPayee(m[1]);
+  m = text.match(/\b(?:to\s+VPA|VPA)\s+([a-z0-9][a-z0-9._-]{1,40}@[a-z]{2,20})/i);
+  if (m) return cleanPayee(m[1].split("@")[0]);
+  // ICICI's "Info: MERCHANT" and Axis's "Transaction Info: UPI/P2A/…/PAYEE".
+  m = text.match(/\bInfo\s*[:\-]\s*([^\n;.]{2,60})/i);
+  if (m) { const c = cleanPayee(m[1]); if (c) return c; }
   m = text.match(/\b(?:towards|at)\s+([A-Za-z0-9][A-Za-z0-9 &.'*_-]{2,50}?)(?:\s+on\b|\s*[.;\n]|$)/i);
-  if (m) return m[1].trim();
+  if (m) { const c = cleanPayee(m[1]); if (c) return c; }
   m = text.match(/\b(?:transferred|sent|paid|credited)\s+to\s+([A-Za-z][A-Za-z0-9 &.'-]{2,50}?)(?:\s+on\b|\s*[.;\n]|$)/i);
-  if (m) return m[1].trim();
+  if (m) { const c = cleanPayee(m[1]); if (c) return c; }
   m = text.match(VPA_RE);
-  if (m) return m[1].split("@")[0];
-  const upi = upiPayee(text);
-  if (upi) return upi;
+  if (m) { const c = cleanPayee(m[1].split("@")[0]); if (c) return c; }
+  // Last resort: a UPI narration anywhere in the body. Scoped to that
+  // substring — running it over the whole email returns the email.
+  m = text.match(/\bUPI[\/][A-Za-z0-9@._\/ -]{6,90}/i);
+  if (m) { const c = cleanPayee(upiPayee(m[0])); if (c) return c; }
   return "";
 }
 
@@ -147,7 +170,7 @@ export function parseAlertEmail(text, { subject = "", messageDate = null, curren
   // Credit only when it's clearly a credit and not also a debit sentence.
   const isCredit = CREDIT_RE.test(body) && !DEBIT_RE.test(body);
   const payee = alertPayee(body);
-  const ref = body.match(UPI_REF_RE);
+  const ref = body.match(UPI_REF_RE) || body.match(UPI_PATH_REF_RE) || body.match(TXN_ID_RE);
   const l4 = body.match(LAST4_RE);
   const date = alertDate(body) ||
     (messageDate ? new Date(messageDate).toISOString().slice(0, 10) : "");
@@ -160,9 +183,12 @@ export function parseAlertEmail(text, { subject = "", messageDate = null, curren
     last4: l4 ? l4[1] : "",
   };
   // Categorise on the payee alone; a bare person's name matches no rule, so
-  // fall back to Cash & Transfers when the body says it's a transfer.
-  t.category = guessCategory(t.description) ||
-    (/\bneft\b|\bimps\b|\brtgs\b|transferred\s+to|fund transfer/i.test(body) ? "Cash & Transfers" : "");
+  // fall back to Cash & Transfers when the body says it's a transfer. With no
+  // payee the description is just the subject line, and guessing from that is
+  // actively wrong ("…Mobile Banking" would read as a phone bill) — leave it
+  // uncategorised and flagged instead.
+  t.category = !payee ? "" : guessCategory(t.description) ||
+    (/\bneft\b|\bimps\b|\brtgs\b|transferred\s+to|fund transfer|UPI\/P2[AP]\b/i.test(body) ? "Cash & Transfers" : "");
   // No payee is worth a human look — some UPI collect alerts carry none.
   if (!payee) { t.needsReview = true; t.reviewReason = "No merchant found in the alert — check the description"; }
   if (!date) { t.needsReview = true; t.reviewReason = "No date found in the alert"; }
