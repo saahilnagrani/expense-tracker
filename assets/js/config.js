@@ -78,7 +78,7 @@ export const CATEGORY_RULES = [
   [/yango|parkonic|zofeur|dubai smart government|\brta\b|\btfl\b|\bforest\b|uber|\bcareem\b|\bola\b|metro|taxi|fuel|petrol|adnoc|enoc|salik|wash|rapido|namma yatri|blusmart|fastag|indian oil|\biocl\b|bharat petroleum|\bbpcl\b|\bhpcl\b|shell/i, "Transport"],
 
   // Travel
-  [/\bvfs\b|emirates|etihad|air ?india|air ?arabia|wizz ?air|indigo|flight|hotel|booking\.com|airbnb|makemytrip|kiwi|irctc|redbus|\boyo\b|goibibo|cleartrip|ixigo|yatra|vistara|spicejet|akasa|easemytrip/i, "Travel"],
+  [/\bvfs\b|emirates|etihad|air ?india|air ?arabia|wizz ?air|indigo|flight|hotel|booking\.com|airbnb|makemytri|kiwi|irctc|redbus|\boyo\b|goibibo|cleartrip|ixigo|yatra|vistara|spicejet|akasa|easemytrip/i, "Travel"],
 
   // Bills & utilities
   [/e&\s?digital|etisalat|tasleem|addc|auh gas|\bdu bill\b|\bdewa\b|myjio|\bjio\b|electricity|water|internet|mobile|recharge|airtel|vodafone idea|tata power|adani electricity|\bbses\b|mahanagar gas|act fibernet|hathway|torrent power|bescom|postpaid|\bdth\b|tata play/i, "Bills & Utilities"],
@@ -126,7 +126,7 @@ export const SOURCES = [
     passwordHint: "Your ADCB Customer ID (SMS 'CID' to 2626 to retrieve)." },
   { bank: "axis-cc", label: "Axis Credit Card", kind: "statement", default: true,
     from: "cc.statements@axis.bank.in", currency: "INR",
-    alert: { from: "alerts@axisbank.com", query: "" },
+    alert: { from: "alerts@axis.bank.in", query: "" },
     passwordHint: "First 4 letters of name (CAPS) + DOB as DDMM, e.g. CKAJ1102 — or + last 4 digits of the card." },
   { bank: "fab", label: "FAB Credit Card", kind: "statement", default: true,
     from: "estatement@bankfab.com", currency: "AED",
@@ -145,11 +145,11 @@ export const SOURCES = [
   //     `acct: true` groups them separately from credit cards in Settings. ---
   { bank: "axis-acct", label: "Axis Bank A/c Statement", kind: "statement", default: false, acct: true,
     from: "statements@axis.bank.in", currency: "INR",
-    alert: { from: "alerts@axisbank.com", query: "" },
+    alert: { from: "alerts@axis.bank.in", query: "" },
     passwordHint: "4 letters of name (CAPS) + 9-digit Customer ID, or + 4-digit DOB (DDMM)." },
   { bank: "hdfc-stmt", label: "HDFC SmartStatement", kind: "statement", default: false, acct: true,
     from: "hdfcbanksmartstatement@hdfcbank.bank.in", currency: "INR",
-    alert: { from: "alerts@hdfcbank.net", query: "" },
+    alert: { from: "alerts@hdfcbank.bank.in", query: "" },
     passwordHint: "Check the HDFC email for the exact password format." },
   { bank: "enbd", label: "Emirates NBD A/c", kind: "statement", default: false, acct: true,
     from: "statement@emiratesnbd.com", currency: "AED",
@@ -179,7 +179,7 @@ export const SOURCES = [
   //     addresses below are the common ones and are easy to correct in place:
   //     the Import tab shows the exact Gmail query each source runs. ---
   { bank: "icici-alert", label: "ICICI Bank alerts", kind: "alert", default: false, acct: true,
-    currency: "INR", alert: { from: "credit_cards@icicibank.com OR alert@icicibank.com", query: "" } },
+    currency: "INR", alert: { from: "customercare@icicibank.com OR credit_cards@icicibank.com", query: "" } },
   { bank: "sbi-alert", label: "SBI alerts", kind: "alert", default: false, acct: true,
     currency: "INR", alert: { from: "alerts.sbi.co.in OR sbicard.com", query: "" } },
   { bank: "kotak-alert", label: "Kotak alerts", kind: "alert", default: false, acct: true,
