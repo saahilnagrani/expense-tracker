@@ -570,9 +570,15 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
      the date and delete so it doesn't cost a line of its own */
   .tbl-exp td[data-c="src"]  { grid-row: 3; grid-column: 5 / span 6; justify-self: end; text-align: right; overflow-wrap: break-word; color: var(--muted); font-size: 12px; }
   .tbl-exp td[data-c="base"] { display: none; }
-  .tbl-exp td[data-c="date"], .tbl-exp td[data-c="src"], .tbl-exp td[data-c="del"] {
-    border-top: 1px solid var(--border); padding-top: 9px; margin-top: 3px;
+  /* One divider drawn across the whole row. Bordering the three footer cells
+     individually left gaps at each column gutter, and since the cells are
+     centre-aligned the segments sat at slightly different heights. */
+  .tbl-exp tbody tr:not(:has(td[colspan]))::before {
+    content: ""; grid-row: 3; grid-column: 1 / -1;
+    align-self: start; height: 0; margin-top: -3px;
+    border-top: 1px solid var(--border);
   }
+  .tbl-exp td[data-c="date"], .tbl-exp td[data-c="src"], .tbl-exp td[data-c="del"] { padding-top: 6px; }
   .tbl-exp td[data-c="date"] { grid-row: 3; grid-column: 1 / span 4; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
   .tbl-exp td[data-c="del"]  { grid-row: 3; grid-column: 11 / -1; justify-self: end; }
   /* "statement" is the default source and eats a lot of a narrow footer;
