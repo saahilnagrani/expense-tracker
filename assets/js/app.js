@@ -10,7 +10,7 @@ import { toBase, fmt, fmtBase } from "./currency.js";
 import * as GM from "./gmail.js";
 import { extractText, PdfPasswordError } from "./pdf.js";
 import {
-  parseStatementByBank, guessCategory, dedupeKey, linkFeesToPurchases,
+  parseStatementByBank, guessCategory, dedupeKey, linkFeesToPurchases, parseAlertEmail,
 } from "./parsers.js";
 import { esc } from "./dashboard.js";
 import { initSelectEnhancer } from "./selects.js";
@@ -119,6 +119,7 @@ function spendBase(e) {
 // ---------- boot ----------
 async function boot() {
   expenses = await allExpenses();
+  await loadAlertState();
   await restorePendingReview(); // an unsaved fetch survives a reload
   await recoverRecurringTemplates();
   await materializeRecurring();
@@ -937,39 +938,106 @@ async function addRecurring() {
 }
 
 // ---------- Import from Gmail ----------
+// A source can be imported from monthly statement PDFs or from per-transaction
+// alert emails; some banks support both, so the mode is per source.
+function sourceMode(src) {
+  const m = (settings.sourceMode || {})[src.bank];
+  if (m === "alert" && src.alert) return "alert";
+  if (m === "statement" && src.from) return "statement";
+  return src.from ? "statement" : "alert"; // whichever the source can do
+}
+function canSwitchMode(src) { return !!src.alert && !!src.from; }
+
+// Where the alert importer has got to, per source:
+//   { [bank]: { watermark: <epoch seconds>, months: { "2026-08": <ms> } } }
+// The watermark makes "Fetch new" read only what arrived since last time —
+// re-scanning a month of UPI alerts to find today's few is not viable.
+let alertState = {};
+async function loadAlertState() { alertState = (await getMeta("alertState", {})) || {}; }
+// Cursors earned by the current review, committed only when it's saved, so
+// discarding a fetch doesn't silently skip those emails next time.
+let reviewCursors = {};
+async function commitReviewCursors() {
+  const banks = Object.keys(reviewCursors);
+  if (!banks.length) return;
+  for (const b of banks) {
+    const cur = (alertState[b] = alertState[b] || { watermark: 0, months: {} });
+    const got = reviewCursors[b];
+    if (got.watermark && got.watermark > (cur.watermark || 0)) cur.watermark = got.watermark;
+    for (const ym of got.months || []) cur.months[ym] = Date.now();
+  }
+  reviewCursors = {};
+  await setMeta("alertState", alertState);
+}
+
+// Which months have already been swept for alerts, so backfill is legible
+// rather than something the user has to remember.
+function importedMonthsHint() {
+  const done = new Set();
+  for (const st of Object.values(alertState)) for (const ym of Object.keys(st.months || {})) done.add(ym);
+  if (!done.size) return "";
+  const list = [...done].sort().reverse();
+  return `<div class="hint mt">Alert months already imported: ${list.slice(0, 12).map((m) => esc(fmtMonth(m))).join(" · ")}${list.length > 12 ? " …" : ""}</div>`;
+}
+
+// The last 24 months, newest first, for the month picker.
+function recentMonths(n = 24) {
+  const out = [];
+  const d = new Date();
+  for (let i = 0; i < n; i++) {
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    d.setMonth(d.getMonth() - 1);
+  }
+  return out;
+}
+
 function renderImport() {
   const connected = GM.isSignedIn();
   const hasClientId = !!settings.googleClientId;
   views.innerHTML = `
     <div class="card">
-      <div class="section-title">Import credit-card transactions from Gmail</div>
+      <div class="section-title">Import transactions from Gmail</div>
       ${!hasClientId ? `<div class="warnbox">No Google Client ID set yet. Add one in <a href="#settings" id="toSettings">Settings → Gmail connection</a> to enable importing. (One-time setup — the README has step-by-step instructions.)</div>` : ""}
       <p class="hint">Reads matching bank emails in your account, parses the transactions, and shows them for your review before anything is saved. Read-only access; nothing is sent anywhere except Google.</p>
       ${(() => {
         const spName = settings.spouseName || "theirs";
-        const chip = (s) => `<label class="chip" style="cursor:pointer;user-select:none"><input type="checkbox" class="srcChk" value="${s.bank}" ${settings.enabledSources.includes(s.bank) ? "checked" : ""} style="margin-right:6px">${esc(s.label)}${s.spouseOnly ? ` <span class="chip-sub">(${esc(spName)})</span>` : ""}</label>`;
-        const vis = (s) => s.kind === "statement" && (!s.spouseOnly || settings.spouseEnabled);
+        const chip = (s) => {
+          const mode = sourceMode(s);
+          const badge = canSwitchMode(s)
+            ? `<button type="button" class="srcMode" data-bank="${s.bank}" title="Importing from ${mode === "alert" ? "per-transaction alert emails — click for monthly statements" : "monthly statement PDFs — click for per-transaction alerts"}">${mode === "alert" ? "alerts" : "statements"}</button>`
+            : `<span class="chip-sub">${mode === "alert" ? "alerts" : "statements"}</span>`;
+          return `<label class="chip" style="cursor:pointer;user-select:none"><input type="checkbox" class="srcChk" value="${s.bank}" ${settings.enabledSources.includes(s.bank) ? "checked" : ""} style="margin-right:6px">${esc(s.label)}${s.spouseOnly ? ` <span class="chip-sub">(${esc(spName)})</span>` : ""} ${badge}</label>`;
+        };
+        const vis = (s) => (!s.spouseOnly || settings.spouseEnabled);
         const cc = SOURCES.filter((s) => vis(s) && !s.acct);
         const acct = SOURCES.filter((s) => vis(s) && s.acct);
         return `
         <div class="pill-group-label mt">Credit cards</div>
         <div class="pill-tabs">${cc.map(chip).join("")}</div>
-        <div class="pill-group-label mt">Bank-account statements</div>
+        <div class="pill-group-label mt">Bank accounts</div>
         <div class="pill-tabs">${acct.map(chip).join("")}</div>`;
       })()}
+      ${connected ? `
+      <div class="flex mt" style="gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn" id="fetchBtn">Fetch new</button>
+        <span class="hint">or</span>
+        <select id="impMonth" class="fsel" style="max-width:150px">${recentMonths().map((ym) => `<option value="${ym}">${esc(fmtMonth(ym))}</option>`).join("")}</select>
+        <button class="btn secondary" id="fetchMonthBtn">Import month</button>
+        <span class="spacer"></span>
+        <button class="btn secondary" id="disconnectBtn">Disconnect</button>
+      </div>
+      <p class="hint">“Fetch new” reads only what has arrived since your last import, so it takes seconds. Use “Import month” to backfill history a month at a time — re-importing a month is always safe, nothing is double-counted.</p>
+      ${importedMonthsHint()}
       <div class="row mt">
-        <div class="field" style="max-width:200px"><label>Look back</label>
+        <div class="field" style="max-width:200px"><label>Statement look-back (Fetch new)</label>
           <select id="lookback">
             ${[3, 6, 12, 24].map((m) => `<option value="${m}" ${settings.lookbackMonths === m ? "selected" : ""}>${m} months</option>`).join("")}
           </select>
         </div>
-        <div class="field" style="align-self:flex-end">
-          ${connected
-            ? `<button class="btn" id="fetchBtn">Fetch & parse</button>`
-            : `<button class="btn" id="connectBtn" ${hasClientId ? "" : "disabled"}>Connect Gmail</button>`}
-        </div>
-        ${connected ? `<div class="field" style="align-self:flex-end"><button class="btn secondary" id="disconnectBtn">Disconnect</button></div>` : ""}
-      </div>
+      </div>` : `
+      <div class="row mt"><div class="field" style="align-self:flex-end">
+        <button class="btn" id="connectBtn" ${hasClientId ? "" : "disabled"}>Connect Gmail</button>
+      </div></div>`}
       <label class="flex mt" style="gap:6px;cursor:pointer"><input type="checkbox" id="impReplace"> Re-import &amp; replace already-imported transactions <span class="hint">(re-applies the latest parsing/categories; overwrites those statements, including any manual edits on them)</span></label>
       <label class="flex mt" style="gap:6px;cursor:pointer"><input type="checkbox" id="impDebug"> Show raw statement text (debug — helps me fix parsing, e.g. missing cashback)</label>
       <div id="importLog" class="mt"></div>
@@ -985,6 +1053,18 @@ function renderImport() {
     saveSettings(settings);
   }));
   $("#lookback")?.addEventListener("change", (e) => { settings.lookbackMonths = +e.target.value; saveSettings(settings); });
+  // Flip a source between statement PDFs and per-transaction alerts. Inside a
+  // <label>, so stop the click from also toggling the source's checkbox.
+  $$(".srcMode").forEach((b) => b.addEventListener("click", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const bank = b.dataset.bank;
+    settings.sourceMode = settings.sourceMode || {};
+    const src = SOURCES.find((s) => s.bank === bank);
+    settings.sourceMode[bank] = sourceMode(src) === "alert" ? "statement" : "alert";
+    saveSettings(settings); markPrefsChanged();
+    renderImport();
+  }));
+  $("#fetchMonthBtn")?.addEventListener("click", () => fetchAndParse({ mode: "month", ym: $("#impMonth").value }));
   $("#connectBtn")?.addEventListener("click", async () => {
     try {
       setLog("Opening Google sign-in…");
@@ -1019,12 +1099,29 @@ document.addEventListener("visibilitychange", async () => {
   }
 });
 
-async function fetchAndParse() {
+async function fetchAndParse(range = { mode: "new" }) {
   const chosen = SOURCES.filter((s) => settings.enabledSources.includes(s.bank));
   if (!chosen.length) return toast("Pick at least one source", "err");
   const after = new Date();
   after.setMonth(after.getMonth() - settings.lookbackMonths);
   const afterStr = `${after.getFullYear()}/${after.getMonth() + 1}/${after.getDate()}`;
+
+  // Gmail accepts a Unix timestamp in after:/before:, so a month is an exact
+  // window and a watermark is second-precise rather than rounded to a day.
+  const monthWindow = () => {
+    const [y, mo] = range.ym.split("-").map(Number);
+    return { after: Math.floor(Date.UTC(y, mo - 1, 1) / 1000), before: Math.floor(Date.UTC(y, mo, 1) / 1000) };
+  };
+  const dateQuery = (src, mode) => {
+    if (range.mode === "month") { const w = monthWindow(); return `after:${w.after} before:${w.before}`; }
+    if (mode === "alert") {
+      const wm = (alertState[src.bank] || {}).watermark;
+      if (wm) return `after:${wm}`;
+      const d = new Date(); d.setMonth(d.getMonth() - 1); // first run: last month
+      return `after:${Math.floor(d.getTime() / 1000)}`;
+    }
+    return `after:${afterStr}`;
+  };
 
   const existing = await existingDedupeKeys();
   const debug = $("#impDebug")?.checked;
@@ -1040,9 +1137,46 @@ async function fetchAndParse() {
   const spLabel = settings.spouseEnabled && settings.spouseLabel ? settings.spouseLabel : "";
   const spName = settings.spouseName || "Spouse";
 
+  // Per-transaction alert emails: one message = one transaction, no PDF.
+  async function runAlertSpec(src, spec) {
+    const froms = String(src.alert.from).split(/\s+OR\s+/i).map((f) => `from:${f.trim()}`);
+    const fromQ = froms.length > 1 ? `{${froms.join(" ")}}` : froms[0];
+    const q = `${fromQ} ${src.alert.query || ""} ${spec.labelQuery || ""} ${dateQuery(src, "alert")}`.replace(/\s+/g, " ").trim();
+    setLog(`Searching ${esc(spec.cardLabel)} alerts…`);
+    const ids = await GM.searchMessages(q, ALERT_MAX);
+    stats.emails += ids.length;
+    let newest = 0;
+    for (let i = 0; i < ids.length; i++) {
+      if (i % 10 === 0) setLog(`${esc(spec.cardLabel)}: reading alert ${i + 1}/${ids.length}…`);
+      const msg = await GM.getMessage(ids[i]);
+      const when = GM.messageDate(msg);
+      newest = Math.max(newest, Math.floor(when.getTime() / 1000));
+      const { text } = GM.extractParts(msg);
+      const subject = GM.header(msg, "Subject");
+      if (debug && debugRaw.length < 40) debugRaw.push({ label: spec.cardLabel, filename: subject || "(alert)", lines: String(text || "").split("\n") });
+      const t = parseAlertEmail(text, { subject, messageDate: when, currency: src.currency || "INR" });
+      if (!t) continue; // OTP, statement-ready, declined … not a transaction
+      stats.pdfs++; // counts as "read something useful"
+      t.source = "alert"; t.bank = src.bank; t.owner = spec.owner;
+      t.card = t.last4 ? `${spec.cardLabel} ••${t.last4}` : spec.cardLabel;
+      t.gmailMessageId = ids[i];
+      t.category = t.category || guessCategory(t.description);
+      // One email is one transaction, so the message id is a true natural key —
+      // far stronger than hashing the text. A UPI reference is better still: it
+      // also catches one payment that generated two different emails.
+      t.dedupeKey = t.upiRef ? `upi|${t.upiRef}` : `msg|${ids[i]}`;
+      t._dup = existing.has(t.dedupeKey);
+      parsed.push(t);
+    }
+    // Remember how far we got; committed only if the review is saved.
+    const cur = (reviewCursors[src.bank] = reviewCursors[src.bank] || { watermark: 0, months: [] });
+    if (newest > cur.watermark) cur.watermark = newest;
+    if (range.mode === "month" && !cur.months.includes(range.ym)) cur.months.push(range.ym);
+  }
+
   // Fetch + parse one owner "spec" for a source.
   async function runSpec(src, spec) {
-    const q = `from:${src.from} ${src.query || ""} ${spec.labelQuery || ""} has:attachment filename:pdf after:${afterStr}`.replace(/\s+/g, " ").trim();
+    const q = `from:${src.from} ${src.query || ""} ${spec.labelQuery || ""} has:attachment filename:pdf ${dateQuery(src, "statement")}`.replace(/\s+/g, " ").trim();
     setLog(`Searching ${esc(spec.cardLabel)}…`);
     const ids = await GM.searchMessages(q, 60);
     stats.emails += ids.length;
@@ -1109,7 +1243,11 @@ async function fetchAndParse() {
         } else if (!src.spouseOnly) {
           specs.push({ labelQuery: "", cardLabel: src.label, password: settings.passwords[src.bank] || "", owner: "me" });
         }
-        for (const spec of specs) await runSpec(src, spec);
+        const mode = sourceMode(src);
+        for (const spec of specs) {
+          if (mode === "alert") await runAlertSpec(src, spec);
+          else await runSpec(src, spec);
+        }
       } catch (e) {
         problems.push(`⚠️ ${src.label}: ${e.message}`);
       }
@@ -1155,12 +1293,13 @@ function persistReview() {
       await setMeta(PENDING_KEY, {
         rows: reviewRows, problems: reviewProblems, dup: reviewDupCount,
         replace: reviewReplace, filter: revFilter, page: revPage, fetchedAt: reviewFetchedAt,
+        cursors: reviewCursors,
       });
     } catch { /* quota or private-mode — the in-memory review still works */ }
   }, 400);
 }
 function clearPendingReview() {
-  reviewRows = []; reviewProblems = []; reviewDupCount = 0; reviewFetchedAt = 0;
+  reviewRows = []; reviewProblems = []; reviewDupCount = 0; reviewFetchedAt = 0; reviewCursors = {};
   clearTimeout(_pendTimer);
   setMeta(PENDING_KEY, null).catch(() => {});
 }
@@ -1175,9 +1314,12 @@ async function restorePendingReview() {
     revFilter = p.filter || { q: "", source: "", needsOnly: false, cat: "", merchant: "" };
     revPage = p.page || 0;
     reviewFetchedAt = p.fetchedAt || 0;
+    reviewCursors = p.cursors || {};
   } catch { /* ignore — just start with no pending review */ }
 }
 const REV_PAGE = 200; // render at most this many review rows at once (perf)
+// A month of heavy UPI use is a few hundred alerts; statements are ~dozens.
+const ALERT_MAX = 900;
 
 function renderReview(rows, problems, stats = {}) {
   // Replace mode: show every parsed row (including already-imported ones) so
@@ -1420,6 +1562,7 @@ async function saveReview() {
 
   await putMany(toSave);
   expenses = await allExpenses();
+  await commitReviewCursors(); // only now is it safe to skip these emails
   scheduleSync();
   toast(reviewReplace
     ? `Replaced ${removed} with ${toSave.length} transaction(s) ✓`
