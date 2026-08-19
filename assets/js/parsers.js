@@ -75,6 +75,100 @@ export function upiPayee(desc) {
   return out.join(" ").replace(/\s+/g, " ").trim();
 }
 
+// ---------------------------------------------------------------------------
+// Per-transaction alert emails. Indian banks send one email per UPI payment,
+// transfer or card spend, so unlike a statement each message is a single
+// transaction. The wording is formulaic and fairly consistent across banks, so
+// one generic parser covers most of them; per-bank quirks can be layered on.
+// ---------------------------------------------------------------------------
+const AMT_RE = /(?:INR|Rs\.?|₹|AED)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i;
+const CREDIT_RE = /\b(credited|received|refund(?:ed)?|reversed|reversal|deposit(?:ed)?|cashback)\b/i;
+const DEBIT_RE = /\b(debited|spent|paid|withdrawn|purchase|charged|sent|transferred)\b/i;
+const UPI_REF_RE = /\bUPI[\s\/:-]*(?:transaction\s*)?(?:Ref(?:erence)?\.?\s*(?:No\.?|Number|ID)?)[\s:.#\/-]*([0-9]{9,22})\b/i;
+const LAST4_RE = /(?:x{2,}|\*{2,}|ending(?:\s+(?:with|in))?|no\.?|card|a\/c|account)[\s:#]*(?:x|\*)*([0-9]{4})\b/i;
+const VPA_RE = /\b([a-z0-9][a-z0-9._-]{1,40}@[a-z]{2,20})\b/i;
+// "Not a transaction" mail that can still slip through a from: filter. Kept
+// deliberately narrow: nearly every genuine alert carries a balance line and a
+// "never share your password/OTP" footer, and dropping a real transaction on
+// those is far worse than letting a stray email reach the review table, where
+// it's visible and one tick away from being excluded.
+// Note the OTP pattern needs "OTP is/for" rather than a bare "OTP": virtually
+// every alert ends with "never share your OTP", which is not an OTP mail.
+const NOT_TXN_RE = /\botp\s+(?:is|for)\b|\bis\s+your\s+otp\b|one[- ]time password\s+(?:is|for)\b|statement is ready|your e-?statement|minimum amount due|\bdeclined\b|\bunsuccessful\b/i;
+
+const MON3 = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+function isoFrom(d, m, y) {
+  let year = +y;
+  if (year < 100) year += 2000;
+  const mm = String(m).padStart(2, "0"), dd = String(d).padStart(2, "0");
+  return `${year}-${mm}-${dd}`;
+}
+// Dates appear as 12-08-25, 12/08/2025, 12-Aug-25, "Aug 12, 2025", 2025-08-12.
+function alertDate(text) {
+  let m = text.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = text.match(/\b(\d{1,2})[-\/\s]([A-Za-z]{3})[a-z]*[-\/\s,]*(\d{2,4})\b/);
+  if (m && MON3[m[2].toLowerCase()]) return isoFrom(m[1], MON3[m[2].toLowerCase()], m[3]);
+  m = text.match(/\b([A-Za-z]{3})[a-z]*\s+(\d{1,2}),?\s*(\d{4})\b/);
+  if (m && MON3[m[1].toLowerCase()]) return isoFrom(m[2], MON3[m[1].toLowerCase()], m[3]);
+  m = text.match(/\b(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})\b/); // dd-mm-yy (Indian order)
+  if (m) return isoFrom(m[1], m[2], m[3]);
+  return "";
+}
+
+// Pull the merchant/payee out of an alert body, most reliable cue first.
+function alertPayee(text) {
+  let m = text.match(/\b(?:to\s+VPA|VPA)\s+([a-z0-9][a-z0-9._-]{1,40}@[a-z]{2,20})/i);
+  if (m) return m[1].split("@")[0];
+  m = text.match(/\bInfo\s*[:\-]\s*([^\n;.]{2,60})/i);            // ICICI
+  if (m) return m[1].trim();
+  m = text.match(/\b(?:towards|at)\s+([A-Za-z0-9][A-Za-z0-9 &.'*_-]{2,50}?)(?:\s+on\b|\s*[.;\n]|$)/i);
+  if (m) return m[1].trim();
+  m = text.match(/\b(?:transferred|sent|paid|credited)\s+to\s+([A-Za-z][A-Za-z0-9 &.'-]{2,50}?)(?:\s+on\b|\s*[.;\n]|$)/i);
+  if (m) return m[1].trim();
+  m = text.match(VPA_RE);
+  if (m) return m[1].split("@")[0];
+  const upi = upiPayee(text);
+  if (upi) return upi;
+  return "";
+}
+
+// Parse one alert email into a transaction, or null if it isn't one.
+// `messageDate` (the email's own timestamp) is the fallback date — an alert
+// arrives within seconds of the transaction, so it's reliable.
+export function parseAlertEmail(text, { subject = "", messageDate = null, currency = "INR" } = {}) {
+  const body = `${subject}\n${String(text || "")}`.replace(/ /g, " ");
+  if (NOT_TXN_RE.test(body)) return null;
+  const am = body.match(AMT_RE);
+  if (!am) return null;
+  const amount = parseFloat(am[1].replace(/,/g, ""));
+  if (!isFinite(amount) || amount <= 0) return null;
+
+  // Credit only when it's clearly a credit and not also a debit sentence.
+  const isCredit = CREDIT_RE.test(body) && !DEBIT_RE.test(body);
+  const payee = alertPayee(body);
+  const ref = body.match(UPI_REF_RE);
+  const l4 = body.match(LAST4_RE);
+  const date = alertDate(body) ||
+    (messageDate ? new Date(messageDate).toISOString().slice(0, 10) : "");
+
+  const t = {
+    date, amount, currency,
+    description: payee || (subject || "").trim() || "Bank alert",
+    kind: isCredit ? "credit" : "expense",
+    upiRef: ref ? ref[1] : "",
+    last4: l4 ? l4[1] : "",
+  };
+  // Categorise on the payee alone; a bare person's name matches no rule, so
+  // fall back to Cash & Transfers when the body says it's a transfer.
+  t.category = guessCategory(t.description) ||
+    (/\bneft\b|\bimps\b|\brtgs\b|transferred\s+to|fund transfer/i.test(body) ? "Cash & Transfers" : "");
+  // No payee is worth a human look — some UPI collect alerts carry none.
+  if (!payee) { t.needsReview = true; t.reviewReason = "No merchant found in the alert — check the description"; }
+  if (!date) { t.needsReview = true; t.reviewReason = "No date found in the alert"; }
+  return t;
+}
+
 export function guessCategory(desc) {
   const s = String(desc || "");
   const payee = upiPayee(s);

@@ -126,6 +126,7 @@ export const SOURCES = [
     passwordHint: "Your ADCB Customer ID (SMS 'CID' to 2626 to retrieve)." },
   { bank: "axis-cc", label: "Axis Credit Card", kind: "statement", default: true,
     from: "cc.statements@axis.bank.in", currency: "INR",
+    alert: { from: "alerts@axisbank.com", query: "" },
     passwordHint: "First 4 letters of name (CAPS) + DOB as DDMM, e.g. CKAJ1102 — or + last 4 digits of the card." },
   { bank: "fab", label: "FAB Credit Card", kind: "statement", default: true,
     from: "estatement@bankfab.com", currency: "AED",
@@ -144,9 +145,11 @@ export const SOURCES = [
   //     `acct: true` groups them separately from credit cards in Settings. ---
   { bank: "axis-acct", label: "Axis Bank A/c Statement", kind: "statement", default: false, acct: true,
     from: "statements@axis.bank.in", currency: "INR",
+    alert: { from: "alerts@axisbank.com", query: "" },
     passwordHint: "4 letters of name (CAPS) + 9-digit Customer ID, or + 4-digit DOB (DDMM)." },
   { bank: "hdfc-stmt", label: "HDFC SmartStatement", kind: "statement", default: false, acct: true,
     from: "hdfcbanksmartstatement@hdfcbank.bank.in", currency: "INR",
+    alert: { from: "alerts@hdfcbank.net", query: "" },
     passwordHint: "Check the HDFC email for the exact password format." },
   { bank: "enbd", label: "Emirates NBD A/c", kind: "statement", default: false, acct: true,
     from: "statement@emiratesnbd.com", currency: "AED",
@@ -171,6 +174,16 @@ export const SOURCES = [
   { bank: "cbd-h", label: "CBD Credit Card", kind: "statement", default: true, spouseOnly: true,
     from: "estatements@cbdstatements.ae", currency: "AED", query: 'subject:"credit card"',
     passwordHint: "Same format as the Emirates NBD statement password." },
+  // --- Per-transaction alert sources (India). One email per UPI payment,
+  //     transfer or card spend, so there is no PDF to open. The `from`
+  //     addresses below are the common ones and are easy to correct in place:
+  //     the Import tab shows the exact Gmail query each source runs. ---
+  { bank: "icici-alert", label: "ICICI Bank alerts", kind: "alert", default: false, acct: true,
+    currency: "INR", alert: { from: "credit_cards@icicibank.com OR alert@icicibank.com", query: "" } },
+  { bank: "sbi-alert", label: "SBI alerts", kind: "alert", default: false, acct: true,
+    currency: "INR", alert: { from: "alerts.sbi.co.in OR sbicard.com", query: "" } },
+  { bank: "kotak-alert", label: "Kotak alerts", kind: "alert", default: false, acct: true,
+    currency: "INR", alert: { from: "kotak.com", query: "" } },
   { bank: "boi-stmt", label: "Bank of India Statement", kind: "statement", default: false, acct: true,
     from: "noreply-estatement@alerts.bankofindia.bank.in", currency: "INR",
     passwordHint: "Check the Bank of India email for the password format." },
@@ -200,6 +213,9 @@ export function defaultSettings() {
     // Which sources are enabled for import (credit cards on by default).
     enabledSources: SOURCES.filter((s) => s.default).map((s) => s.bank),
     lookbackMonths: 12,
+    // Per source: "statement" (parse the PDF) or "alert" (parse per-transaction
+    // emails). Only meaningful for sources that support both.
+    sourceMode: {},
     // Cross-device sync via the user's private Google Drive app-data folder.
     autoSync: true,
     // Attribute a foreign-currency fee (and its GST) to the purchase it was
