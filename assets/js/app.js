@@ -147,14 +147,22 @@ async function boot() {
   }
 }
 
-function go(view) {
+// keepScroll: repaint the current view in place without yanking the reader
+// back to the top — used by background syncs, which otherwise reset the
+// scroll position mid-read.
+function go(view, { keepScroll = false } = {}) {
   closeCatPanel(); // it lives on <body>, so it would outlive the view that owns it
+  const y = window.scrollY;
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
   location.hash = view;
   const fn = ({ dashboard: renderDashboard, expenses: renderExpenses,
     add: renderAdd, import: renderImport, settings: renderSettings })[view] || renderDashboard;
   fn();
-  window.scrollTo(0, 0);
+  if (!keepScroll) { window.scrollTo(0, 0); return; }
+  // Replacing the view collapses the page height for an instant, so the
+  // browser clamps scrollY; restore it again once the new content has laid out.
+  window.scrollTo(0, y);
+  requestAnimationFrame(() => window.scrollTo(0, y));
 }
 
 function updateBasePill() {
@@ -346,17 +354,35 @@ async function rememberGoogleEmail() {
   } catch {}
 }
 
+// Cheap hash over ids + updatedAt, so a silent sync can tell whether the
+// merge actually changed anything before rebuilding the view.
+function expensesFingerprint(list) {
+  let h = 5381 ^ list.length;
+  for (const e of list) {
+    const s = e.id + "|" + (e.updatedAt || 0);
+    for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  }
+  return h;
+}
+
 async function runSync(silent) {
   if (!GM.isSignedIn()) { if (!silent) toast("Connect your Google account first", "err"); return; }
   try {
     if (!silent) toast("Syncing…");
+    const before = silent ? expensesFingerprint(expenses) : 0;
     await syncNow();
     expenses = await allExpenses();
     settings = loadSettings();
     updateBasePill();
     const cur = location.hash.replace("#", "") || "dashboard";
-    if (!silent || cur === "dashboard" || cur === "expenses") go(cur);
-    if (!silent) toast("Synced ✓", "ok");
+    if (!silent) {
+      go(cur);
+      toast("Synced ✓", "ok");
+    } else if ((cur === "dashboard" || cur === "expenses") && expensesFingerprint(expenses) !== before) {
+      // Only repaint when the sync actually changed something, and keep the
+      // reader's place when it does.
+      go(cur, { keepScroll: true });
+    }
   } catch (e) {
     toast("Sync failed: " + e.message, "err");
   }
@@ -1359,7 +1385,7 @@ function reviewRowHtml(r, i) {
     <td data-c="cur" data-label="Currency">${esc(r.currency || "?")}</td>
     <td data-c="kind" data-label="Type"><select class="cellin" data-i="${i}" data-f="kind" style="min-width:104px"><option value="expense" ${r.kind !== "credit" ? "selected" : ""}>Expense</option><option value="credit" ${r.kind === "credit" ? "selected" : ""}>Credit</option></select></td>
     <td data-c="cat" data-label="Category"><select class="cellin" data-i="${i}" data-f="category">${cats}</select></td>
-    <td data-c="src" class="hint" data-label="Source" style="white-space:nowrap">${esc(r.card || "")}</td>
+    <td data-c="src" class="hint" data-label="Source"><span class="src-val">${esc(r.card || "")}</span></td>
     <td data-c="rev" data-label="Review">${r.needsReview ? `<span class="chip warn" title="${esc(r.reviewReason || "Check this row")}">review</span>` : `<span class="hint">ok</span>`}</td>
   </tr>`;
 }

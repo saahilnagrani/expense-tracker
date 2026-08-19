@@ -624,6 +624,13 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
   .tbl-rev td[data-c="cat"]::before { content: none; }
   .tbl-rev td[data-c="kind"] .cs-btn, .tbl-rev td[data-c="cat"] .cs-btn { width: 100%; min-width: 0 !important; }
   .tbl-rev td[data-c="src"]  { grid-row: 5; grid-column: 1 / -1; justify-content: space-between; }
+  /* same as the Expenses card: one line, scrolls sideways instead of wrapping */
+  .tbl-rev td[data-c="src"] .src-val {
+    flex: 0 1 auto; min-width: 0; margin-left: auto;
+    white-space: nowrap; overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  }
+  .tbl-rev td[data-c="src"] .src-val::-webkit-scrollbar { display: none; }
   .tbl-rev td[data-c="rev"]  { grid-row: 6; grid-column: 1 / -1; justify-content: space-between; }
 
   /* ---- Fixed monthly: compact 2-column info card (label above value) ---- */
