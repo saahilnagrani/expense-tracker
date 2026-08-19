@@ -43,8 +43,46 @@ export function parseDate(s) {
   return null;
 }
 
+// Indian UPI narrations bury the real payee inside a slash- or dash-separated
+// string of reference numbers, bank codes and VPAs:
+//   UPI/DR/412345678901/SWIGGY/UTIB/swiggy@axis/Payment
+//   UPI-ZOMATO LTD-zomato@ybl-YESB0000123-4128...
+// Matching rules against the raw text just hits the generic "upi" rule and
+// files everything under Cash & Transfers — which, for someone who pays by UPI
+// for everything, is most of their spending. Pull the payee out instead.
+const UPI_NOISE = /^(upi|dr|cr|mob|p2m|p2a|p2p|pay|payment|from|to|ref|txn|no|na|null|inb|imps|neft|rtgs|collect|mandate|sent|received|by|transfer|trf|rev)$/i;
+// UPI handles and short bank codes that are never the payee.
+const UPI_BANK = /^(utib|hdfc|icic|sbin|yesb|kkbk|punb|barb|idib|cnrb|ubin|bkid|indb|fdrl|ratn|idfb|ioba|ybl|ibl|axl|apl|okaxis|okhdfcbank|okicici|oksbi|paytm|pytm|ptys|ptsbi|ptaxis|abfspay|waaxis|wahdfcbank|freecharge|ikwik|timecosmos|jupiteraxis|naviaxis|superyes|yapl|fam|rmhdfc)$/i;
+const IFSC = /^[a-z]{4}0[a-z0-9]{6}$/i;
+
+export function upiPayee(desc) {
+  const s = String(desc || "");
+  if (!/\bupi\b/i.test(s)) return "";
+  const out = [];
+  for (const raw of s.split(/[\/|\\\-–—]+/)) {
+    const p = raw.trim();
+    if (!p) continue;
+    if (p.includes("@")) {                 // a VPA — its handle is the payee
+      const h = p.split("@")[0];
+      if (h && /[a-z]/i.test(h) && !UPI_NOISE.test(h)) out.push(h);
+      continue;
+    }
+    if (/^\d+$/.test(p)) continue;         // reference / transaction numbers
+    if (IFSC.test(p) || UPI_BANK.test(p) || UPI_NOISE.test(p)) continue;
+    if (!/[a-z]/i.test(p)) continue;
+    out.push(p);
+  }
+  return out.join(" ").replace(/\s+/g, " ").trim();
+}
+
 export function guessCategory(desc) {
-  for (const [re, cat] of CATEGORY_RULES) if (re.test(desc)) return cat;
+  const s = String(desc || "");
+  const payee = upiPayee(s);
+  if (payee) {
+    for (const [re, cat] of CATEGORY_RULES) if (re.test(payee)) return cat;
+    return "Cash & Transfers"; // paid a person, or a payee no rule knows
+  }
+  for (const [re, cat] of CATEGORY_RULES) if (re.test(s)) return cat;
   return "";
 }
 

@@ -1589,9 +1589,25 @@ function renderSettings() {
     const tbl = $(".pw-table"); if (tbl) tbl.classList.toggle("hide-spouse", !on);
   });
   $("#saveSet").addEventListener("click", async () => {
-    settings.baseCurrency = $("#setBase").value;
     settings.googleClientId = $("#setClient").value.trim();
     $$(".rateIn").forEach((el) => { settings.rates[el.dataset.cur] = parseFloat(el.value) || 0; });
+    // Rates are "value of 1 unit in the base currency", so changing the base
+    // invalidates every one of them — switching AED→INR without this silently
+    // multiplies all INR spend by 0.044. Re-express them against the new base.
+    const newBase = $("#setBase").value;
+    if (newBase !== settings.baseCurrency) {
+      const f = settings.rates[newBase];
+      if (f && isFinite(f) && f > 0) {
+        const next = {};
+        for (const [c, r] of Object.entries(settings.rates)) {
+          next[c] = isFinite(r) && r > 0 ? +(r / f).toPrecision(8) : r;
+        }
+        next[newBase] = 1;
+        settings.rates = next;
+        toast(`Exchange rates re-based to ${newBase}`, "ok");
+      }
+    }
+    settings.baseCurrency = newBase;
     $$(".pwIn").forEach((el) => { settings.passwords[el.dataset.bank] = el.value; });
     settings.spouseEnabled = $("#spEnabled")?.checked || false;
     settings.spouseName = $("#spName")?.value.trim() || "";
