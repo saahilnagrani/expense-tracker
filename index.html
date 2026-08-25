@@ -1,7 +1,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Expense Tracker</title>
-<link rel="stylesheet" href="./assets/css/styles.css?v=76" />
+<link rel="stylesheet" href="./assets/css/styles.css?v=77" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💸</text></svg>" />
 
 <!-- Installable app (PWA) -->
@@ -27,7 +27,17 @@
   </header>
 
   <main id="views">
-    <!-- Views are rendered by app.js -->
+    <!-- Painted immediately so a cold start isn't a blank page while app.js
+         loads IndexedDB, materializes recurring expenses and runs migrations.
+         The first render from go() replaces it wholesale. -->
+    <div class="card" id="bootSkeleton" aria-busy="true" aria-label="Loading your expenses">
+      <div class="skel skel-head"></div>
+      <div class="skel-row"><div class="skel skel-line w-sm"></div><div class="skel skel-line w-lg"></div><div class="skel skel-line w-md"></div></div>
+      <div class="skel-row"><div class="skel skel-line w-sm"></div><div class="skel skel-line w-lg"></div><div class="skel skel-line w-md"></div></div>
+      <div class="skel-row"><div class="skel skel-line w-sm"></div><div class="skel skel-line w-lg"></div><div class="skel skel-line w-md"></div></div>
+      <div class="skel-row"><div class="skel skel-line w-sm"></div><div class="skel skel-line w-lg"></div><div class="skel skel-line w-md"></div></div>
+      <div class="skel-row"><div class="skel skel-line w-sm"></div><div class="skel skel-line w-lg"></div><div class="skel skel-line w-md"></div></div>
+    </div>
   </main>
 
   <div id="toast" class="toast" hidden></div>
@@ -44,4 +54,4 @@
   </div>
 </div>
 
-<script type="module" src="./assets/js/app.js?v=76"></script>
+<script type="module" src="./assets/js/app.js?v=77"></script>

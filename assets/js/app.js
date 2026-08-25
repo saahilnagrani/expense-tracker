@@ -700,6 +700,23 @@ let expFilter = { q: "", month: "", card: "", cat: "", merchant: "" };
 let expPage = 0;
 const EXP_PAGE = 200; // render at most this many expense rows at once (perf)
 function renderExpenses() {
+  // With no data at all the filter toolbar is five empty dropdowns and a dead
+  // "No matching transactions" — say what this screen is for instead, and
+  // point at the two ways to put something in it.
+  if (!expenses.length) {
+    views.innerHTML = `<div class="card empty">
+      <div class="big">${icon("expenses", 40)}</div>
+      <h3>No transactions yet</h3>
+      <p class="muted">Import your card statements or alert emails from Gmail and they'll land here, ready to review and categorise.</p>
+      <div class="flex" style="justify-content:center;margin-top:14px">
+        <button class="btn" id="expEmptyImport">Import from Gmail</button>
+        <button class="btn secondary" id="expEmptyAdd">Add a fixed expense</button>
+      </div>
+    </div>`;
+    $("#expEmptyImport")?.addEventListener("click", () => go("import"));
+    $("#expEmptyAdd")?.addEventListener("click", () => go("add"));
+    return;
+  }
   const cards = [...new Set(expenses.map((e) => e.card).filter(Boolean))].sort();
   const months = [...new Set(expenses.map((e) => e.date.slice(0, 7)))].sort().reverse();
 
@@ -757,7 +774,12 @@ function renderExpenses() {
     if (expPage < 0) expPage = 0;
     const pageRows = filtered.slice(expPage * EXP_PAGE, expPage * EXP_PAGE + EXP_PAGE);
     $("#expCount").innerHTML = `${filtered.length} transaction(s) · spend total ${fmtBase(totalBase, settings)}`;
-    $("#expBody").innerHTML = pageRows.map(rowHtml).join("") || `<tr><td colspan="8" class="hint" style="padding:24px">No matching transactions.</td></tr>`;
+    $("#expBody").innerHTML = pageRows.map(rowHtml).join("") || `<tr><td colspan="8">
+      <div class="empty-inline">
+        <p>No transactions match these filters.</p>
+        <button class="btn sm secondary" id="expClearEmpty">Clear filters</button>
+      </div></td></tr>`;
+    $("#expClearEmpty")?.addEventListener("click", () => { expFilter = { q: "", month: "", card: "", cat: "", merchant: "" }; expPage = 0; renderExpenses(); });
     // Same pager above and below the table, so you can page without scrolling
     // to the far end of a 200-row page.
     const pagerHtml = pages > 1 ? `
@@ -876,7 +898,11 @@ function renderAdd() {
           <td data-c="end" data-label="End"><input type="month" class="cellin recEnd" data-id="${t.id}" value="${t.endMonth || ""}" style="width:150px"></td>
           <td data-c="act" class="right"><button class="btn sm secondary recToggle" data-id="${t.id}">${t.active === false ? "Resume" : "Pause"}</button> <button class="icon-btn recDel" data-id="${t.id}" title="Delete">${icon("trash",16)}</button></td>
         </tr>`).join("")}
-      </tbody></table></div>` : `<div class="hint mt">No fixed monthly expenses yet — add one above.</div>`}
+      </tbody></table></div>` : `<div class="empty" style="padding:34px 20px">
+        <div class="big">${icon("fixed", 36)}</div>
+        <h3>No fixed expenses yet</h3>
+        <p class="muted">Add rent, house help or anything else you pay every month using the form above — each one is created automatically from its start month onward.</p>
+      </div>`}
     </div>`;
 
   $("#rcAdd").addEventListener("click", addRecurring);
@@ -1046,6 +1072,8 @@ function renderImport() {
 
   // A fetch you haven't saved yet survives leaving and re-entering this tab.
   if (reviewRows.length) paintReview();
+  // ...and so does a fetch still in flight: this rebuilt the buttons enabled.
+  if (_importing) setImportBusy(true, "fetchBtn");
 
   $("#toSettings")?.addEventListener("click", (e) => { e.preventDefault(); go("settings"); });
   $$(".srcChk").forEach((c) => c.addEventListener("change", () => {
@@ -1076,10 +1104,38 @@ function renderImport() {
     } catch (e) { setLog(""); toast(e.message, "err"); }
   });
   $("#disconnectBtn")?.addEventListener("click", () => { GM.disconnect(); renderImport(); });
-  $("#fetchBtn")?.addEventListener("click", fetchAndParse);
+  $("#fetchBtn")?.addEventListener("click", () => fetchAndParse({ mode: "new" }));
 }
 
-function setLog(html) { const el = $("#importLog"); if (el) el.innerHTML = html; }
+// Progress during an import. The text carries the detail (which statement,
+// how far through); the spinner is what says the run is still alive — a
+// static line of grey text read as "stuck" on a slow mailbox.
+function setLog(html) {
+  const el = $("#importLog");
+  if (!el) return;
+  el.innerHTML = html ? `<div class="working"><span class="spinner"></span><span>${html}</span></div>` : "";
+}
+
+// A fetch takes tens of seconds (many emails, PDF decryption) and both fetch
+// buttons stayed live throughout, so a second click started a concurrent run
+// over the same mailbox. Lock them, and show the work in the one you pressed.
+function setImportBusy(on, pressedId) {
+  ["fetchBtn", "fetchMonthBtn"].forEach((id) => {
+    const b = document.getElementById(id);
+    if (!b) return;
+    b.disabled = on;
+    if (on && id === pressedId) {
+      if (b.dataset.label === undefined) { // don't re-capture a label that's already a spinner
+        b.dataset.label = b.innerHTML;
+        b.innerHTML = `<span class="spinner"></span>${esc(b.textContent)}`;
+      }
+      b.setAttribute("aria-busy", "true");
+    } else if (!on) {
+      b.removeAttribute("aria-busy");
+      if (b.dataset.label !== undefined) { b.innerHTML = b.dataset.label; delete b.dataset.label; }
+    }
+  });
+}
 
 // Keep the phone screen awake during an import so locking it doesn't suspend
 // the tab (and its in-flight requests). The lock is auto-released when the tab
@@ -1100,6 +1156,7 @@ document.addEventListener("visibilitychange", async () => {
 });
 
 async function fetchAndParse(range = { mode: "new" }) {
+  if (_importing) return; // a click that lands mid-run must not start a second one
   const chosen = SOURCES.filter((s) => settings.enabledSources.includes(s.bank));
   if (!chosen.length) return toast("Pick at least one source", "err");
   const after = new Date();
@@ -1232,6 +1289,7 @@ async function fetchAndParse(range = { mode: "new" }) {
   }
 
   _importing = true;
+  setImportBusy(true, range.mode === "month" ? "fetchMonthBtn" : "fetchBtn");
   await keepAwake();
   try {
     for (const src of chosen) {
@@ -1254,6 +1312,7 @@ async function fetchAndParse(range = { mode: "new" }) {
     }
   } finally {
     _importing = false;
+    setImportBusy(false);
     await releaseAwake();
   }
 
@@ -1823,4 +1882,19 @@ function openModal(title, html) {
 }
 function closeModal() { $("#modal").hidden = true; }
 
-boot();
+// A thrown migration or a blocked IndexedDB would otherwise leave the boot
+// skeleton shimmering forever, with no way to tell a slow start from a dead
+// one. Say so, and offer the one action that usually fixes it.
+boot().catch((err) => {
+  console.error("boot failed", err);
+  views.innerHTML = `<div class="card empty">
+    <div class="big">${icon("alert", 40)}</div>
+    <h3>Couldn't load your expenses</h3>
+    <p class="muted">${esc(err && err.message ? err.message : String(err))}</p>
+    <div class="flex" style="justify-content:center;margin-top:14px">
+      <button class="btn" id="bootRetry">Reload</button>
+    </div>
+  </div>`;
+  document.getElementById("bootRetry")?.addEventListener("click", () => location.reload());
+  hydrateIcons();
+});

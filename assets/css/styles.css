@@ -67,6 +67,9 @@ a { color: var(--brand); }
   margin-left: auto; background: var(--chip); color: var(--muted);
   padding: 6px 12px; border-radius: 999px; font-weight: 600; font-size: 13px;
 }
+/* JS fills this on boot; before that it's an empty grey blob in the header
+   on every cold start. No text, no pill. */
+.base-pill:empty { display: none; }
 
 /* Mobile: move the tabs into a fixed bottom icon tray */
 @media (max-width: 640px) {
@@ -666,3 +669,67 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
   }
 
 }
+
+/* ============================================================
+   Busy & loading states
+   ------------------------------------------------------------
+   The app had none: a cold start painted an empty <main> while
+   IndexedDB loaded, and a 30-second Gmail import reported itself
+   as a line of grey text. Both now say "working" visually.
+   ============================================================ */
+
+/* One ring, currentColor, sized from the surrounding font-size so it works
+   inside a button, a log line, or a heading without per-site tuning. */
+.spinner {
+  display: inline-block; flex: none;
+  width: 1em; height: 1em; vertical-align: -.15em;
+  border: 2px solid currentColor; border-right-color: transparent;
+  border-radius: 50%; opacity: .6;
+  animation: spin .7s linear infinite;
+}
+.spinner.lg { width: 20px; height: 20px; border-width: 2.5px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* A busy button keeps its label and its width, so the toolbar never reflows
+   mid-import. `cursor: progress` distinguishes "working" from "unavailable". */
+.btn[aria-busy="true"] { cursor: progress; opacity: .8; }
+.btn[aria-busy="true"] .spinner { opacity: .95; }
+
+/* Inline progress line (import log). The text carries the detail — which
+   statement, how far through — the spinner just says it's still alive. */
+.working { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; }
+.working .spinner { color: var(--brand); opacity: .9; }
+
+/* Skeletons — the first paint of a view, before the data is ready. Shaped
+   like the content that replaces them so the layout doesn't jump. */
+.skel { background: var(--chip); border-radius: 8px; position: relative; overflow: hidden; }
+.skel::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--panel) 65%, transparent), transparent);
+  animation: shimmer 1.25s ease-in-out infinite;
+}
+.skel-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.skel-row:last-child { border-bottom: 0; }
+.skel-line { height: 11px; }
+.skel-line.w-lg { flex: 1 1 auto; }
+.skel-line.w-md { width: 22%; }
+.skel-line.w-sm { width: 12%; }
+.skel-head { height: 15px; width: 190px; margin-bottom: 18px; }
+@keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+/* Reduced motion: the shimmer is decoration and goes away entirely; the
+   spinner carries real information, so it keeps turning, just slower.
+   Both need !important + a class to beat the global `*` reduce rule above. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 1.3s !important; }
+  .skel::after { animation: none !important; display: none; }
+}
+
+/* Empty states: `.empty` already covers the "no data at all" case. This is
+   the other one — a filter combination that matches nothing, which needs a
+   way back out rather than a dead end. */
+.empty .btn { margin-top: 2px; }
+.empty-inline { text-align: center; color: var(--muted); padding: 34px 20px; white-space: normal; }
+.empty-inline p { margin: 0 0 12px; }
+/* no row divider under an empty message — it reads as a cut-off row */
+table.data td:has(.empty-inline) { border-bottom: 0; }
