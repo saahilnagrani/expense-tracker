@@ -197,7 +197,12 @@ export const AXIS_CARD_PRODUCTS = {
   "1985": "Select", "1993": "Select",
 };
 
-export const SETTINGS_KEY = "et.settings.v1";
+// Demo mode (?demo=1): a shareable sandbox with sample data. It gets its own
+// database and settings key so demo data can never mix with real data in
+// either direction — including when the owner opens their own demo link.
+export const IS_DEMO = typeof location !== "undefined" && /[?&]demo=1(?:&|$)/.test(location.search);
+
+export const SETTINGS_KEY = IS_DEMO ? "et.settings.demo" : "et.settings.v1";
 
 export function defaultSettings() {
   return {
