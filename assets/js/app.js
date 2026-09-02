@@ -162,7 +162,7 @@ function renderDemoBanner() {
   bar.id = "demoBar";
   bar.className = "demo-bar";
   bar.innerHTML = `<span class="demo-tag">Demo</span>
-    <span class="demo-msg">Sample data. Nothing is saved to any account, and Gmail sync is off.</span>
+    <span class="demo-msg">Nothing is saved to any account, and Gmail sync is off.</span>
     <button type="button" class="mini" id="demoReset">Reset demo data</button>`;
   document.getElementById("app").prepend(bar);
   bar.querySelector("#demoReset").addEventListener("click", async () => {
