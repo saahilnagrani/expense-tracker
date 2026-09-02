@@ -5,7 +5,7 @@ import {
   getMeta, setMeta,
 } from "./db.js";
 import { syncNow, markPrefsChanged, lastSyncedAt } from "./sync.js";
-import { SOURCES, DEFAULT_CATEGORIES } from "./config.js";
+import { SOURCES, DEFAULT_CATEGORIES, IS_DEMO } from "./config.js";
 import { toBase, fmt, fmtBase } from "./currency.js";
 import * as GM from "./gmail.js";
 import { extractText, PdfPasswordError } from "./pdf.js";
@@ -15,6 +15,7 @@ import {
 import { esc } from "./dashboard.js";
 import { initSelectEnhancer } from "./selects.js";
 import { icon, hydrateIcons } from "./icons.js";
+import { seedDemoIfNeeded, seedDemo } from "./demo.js";
 
 let settings = loadSettings();
 let expenses = [];
@@ -118,6 +119,7 @@ function spendBase(e) {
 
 // ---------- boot ----------
 async function boot() {
+  if (IS_DEMO) { await seedDemoIfNeeded(); renderDemoBanner(); }
   expenses = await allExpenses();
   await loadAlertState();
   await restorePendingReview(); // an unsaved fetch survives a reload
@@ -151,6 +153,29 @@ async function boot() {
 // keepScroll: repaint the current view in place without yanking the reader
 // back to the top — used by background syncs, which otherwise reset the
 // scroll position mid-read.
+// A standing reminder that this is sample data, plus the way back to a clean
+// dataset. Also the one place that says out loud that nothing here is saved to
+// any account — worth stating on a link sent to someone else.
+function renderDemoBanner() {
+  if (document.getElementById("demoBar")) return;
+  const bar = document.createElement("div");
+  bar.id = "demoBar";
+  bar.className = "demo-bar";
+  bar.innerHTML = `<span class="demo-tag">Demo</span>
+    <span class="demo-msg">Sample data. Nothing is saved to any account, and Gmail sync is off.</span>
+    <button type="button" class="mini" id="demoReset">Reset demo data</button>`;
+  document.getElementById("app").prepend(bar);
+  bar.querySelector("#demoReset").addEventListener("click", async () => {
+    if (!confirm("Reset the demo back to its original sample data?")) return;
+    await seedDemo();
+    settings = loadSettings();
+    expenses = await allExpenses();
+    updateBasePill();
+    go("dashboard");
+    toast("Demo data reset", "ok");
+  });
+}
+
 function go(view, { keepScroll = false } = {}) {
   closeCatPanel(); // it lives on <body>, so it would outlive the view that owns it
   const y = window.scrollY;
@@ -343,6 +368,7 @@ async function materializeRecurring() {
 // ---- Google Drive sync helpers ----
 let syncTimer;
 function scheduleSync() {
+  if (IS_DEMO) return;
   if (!settings.autoSync || !GM.isSignedIn()) return;
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => runSync(true), 2500);
@@ -367,6 +393,7 @@ function expensesFingerprint(list) {
 }
 
 async function runSync(silent) {
+  if (IS_DEMO) return;
   if (!GM.isSignedIn()) { if (!silent) toast("Connect your Google account first", "err"); return; }
   try {
     if (!silent) toast("Syncing…");
@@ -999,6 +1026,7 @@ function renderImport() {
       <div class="section-title">Import transactions from Gmail</div>
       ${!hasClientId ? `<div class="warnbox">No Google Client ID set yet. Add one in <a href="#settings" id="toSettings">Settings → Gmail connection</a> to enable importing. (One-time setup — the README has step-by-step instructions.)</div>` : ""}
       <p class="hint">Reads matching bank emails in your account, parses the transactions, and shows them for your review before anything is saved. Read-only access; nothing is sent anywhere except Google.</p>
+      ${IS_DEMO ? `<div class="warnbox mt">Gmail import is switched off in the demo — it would need access to a real inbox. The sample transactions on the other tabs are what an import produces. Everything else is fully usable: edit categories, delete rows, add fixed expenses, then hit <b>Reset demo data</b> in the banner to start over.</div>` : ""}
       ${(() => {
         const spName = settings.spouseName || "theirs";
         const chip = (s) => {

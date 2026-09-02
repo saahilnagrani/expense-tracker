@@ -1,32 +1,51 @@
 // IndexedDB storage for expenses + small helpers for settings/meta.
 // Expenses live in IndexedDB; settings & sync cursors live in localStorage.
 
-import { SETTINGS_KEY, defaultSettings } from "./config.js";
+import { SETTINGS_KEY, defaultSettings, IS_DEMO } from "./config.js";
 
-const DB_NAME = "expense-tracker";
+const DB_NAME = IS_DEMO ? "expense-tracker-demo" : "expense-tracker";
 const DB_VERSION = 1;
 const STORE = "expenses";
 const META = "meta"; // imported message ids, sync info
 
 let _db = null;
 
+function createStores(db) {
+  if (!db.objectStoreNames.contains(STORE)) {
+    const os = db.createObjectStore(STORE, { keyPath: "id" });
+    os.createIndex("date", "date");
+    os.createIndex("dedupeKey", "dedupeKey", { unique: false });
+    os.createIndex("gmailMessageId", "gmailMessageId", { unique: false });
+  }
+  if (!db.objectStoreNames.contains(META)) {
+    db.createObjectStore(META, { keyPath: "key" });
+  }
+}
+const hasStores = (db) => db.objectStoreNames.contains(STORE) && db.objectStoreNames.contains(META);
+
 function openDB() {
   if (_db) return Promise.resolve(_db);
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = () => createStores(req.result);
+    req.onsuccess = () => {
       const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        const os = db.createObjectStore(STORE, { keyPath: "id" });
-        os.createIndex("date", "date");
-        os.createIndex("dedupeKey", "dedupeKey", { unique: false });
-        os.createIndex("gmailMessageId", "gmailMessageId", { unique: false });
+      // Self-heal: a database can exist at our version but be missing its
+      // stores (an upgrade interrupted midway, or something else claiming the
+      // name first). onupgradeneeded won't fire again, so every read would
+      // throw forever. Reopen one version higher to force the upgrade.
+      if (!hasStores(db)) {
+        const next = db.version + 1;
+        db.close();
+        const up = indexedDB.open(DB_NAME, next);
+        up.onupgradeneeded = () => createStores(up.result);
+        up.onsuccess = () => { _db = up.result; resolve(_db); };
+        up.onerror = () => reject(up.error);
+        return;
       }
-      if (!db.objectStoreNames.contains(META)) {
-        db.createObjectStore(META, { keyPath: "key" });
-      }
+      _db = db;
+      resolve(_db);
     };
-    req.onsuccess = () => { _db = req.result; resolve(_db); };
     req.onerror = () => reject(req.error);
   });
 }
