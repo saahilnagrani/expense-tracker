@@ -178,14 +178,42 @@ export async function seedDemo() {
 // Cloudflare Web Analytics, demo link only. Injected at runtime rather than
 // sitting in index.html, so it can be gated behind demo mode and never loads
 // for the real app. No cookies, so no consent banner is required.
+const BEACON_SRC = "https://static.cloudflareinsights.com/beacon.min.js";
+
 export function loadDemoAnalytics() {
   if (!CF_BEACON_TOKEN || document.getElementById("cf-beacon")) return;
+  injectBeacon(false);
+}
+
+// Load as a CLASSIC script, not type="module". The beacon reads its own token
+// from document.currentScript.getAttribute("data-cf-beacon") — and
+// currentScript is always null inside a module, so a module-loaded beacon
+// finds no token and silently reports nothing. The script still fetches, which
+// is why a network check alone looks healthy.
+//
+// The one thing a classic script can't survive is the file genuinely being an
+// ES module (an `export` would be a SyntaxError). That surfaces as a window
+// error naming the script's URL rather than as onerror on the element, so
+// watch for both and retry as a module if it happens.
+function injectBeacon(asModule) {
   const s = document.createElement("script");
   s.id = "cf-beacon";
-  // Cloudflare ships the beacon as an ES module — loading it as a classic
-  // script would throw. type="module" is deferred by default.
-  s.type = "module";
-  s.src = "https://static.cloudflareinsights.com/beacon.min.js";
+  s.src = BEACON_SRC;
   s.setAttribute("data-cf-beacon", JSON.stringify({ token: CF_BEACON_TOKEN }));
+  if (asModule) s.type = "module";
+
+  if (!asModule) {
+    const onParseError = (e) => {
+      if (e.filename !== BEACON_SRC) return;
+      cleanup();
+      s.remove();            // don't leave a dead script[data-cf-beacon] behind
+      injectBeacon(true);
+    };
+    const cleanup = () => window.removeEventListener("error", onParseError, true);
+    window.addEventListener("error", onParseError, true);
+    s.addEventListener("load", cleanup);
+    s.addEventListener("error", cleanup);  // blocked or offline: nothing to do
+  }
+
   document.head.appendChild(s);
 }

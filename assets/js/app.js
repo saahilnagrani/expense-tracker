@@ -119,7 +119,10 @@ function spendBase(e) {
 
 // ---------- boot ----------
 async function boot() {
-  if (IS_DEMO) { await seedDemoIfNeeded(); renderDemoBanner(); loadDemoAnalytics(); }
+  // Analytics first: seeding touches IndexedDB, which can fail outright in a
+  // locked-down private window. If it throws, boot dies at that await — and a
+  // visit we never counted is exactly the visit worth counting.
+  if (IS_DEMO) { loadDemoAnalytics(); await seedDemoIfNeeded(); renderDemoBanner(); }
   expenses = await allExpenses();
   await loadAlertState();
   await restorePendingReview(); // an unsaved fetch survives a reload
