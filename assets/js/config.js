@@ -204,6 +204,17 @@ export const IS_DEMO = typeof location !== "undefined" && /[?&]demo=1(?:&|$)/.te
 
 export const SETTINGS_KEY = IS_DEMO ? "et.settings.demo" : "et.settings.v1";
 
+// Cloudflare Web Analytics beacon token, used ONLY on the demo link so you can
+// see whether anyone has opened it. Deliberately not applied to the real app:
+// "nothing leaves your device" is the whole point of it, and a tracker on the
+// page you use for your own finances would quietly undo that.
+//
+// To switch it on: Cloudflare dashboard -> Web Analytics -> Add a site
+// (https://saahilnagrani.github.io/expense-tracker/), copy the token, paste it
+// here. The token is not a secret — Cloudflare puts it in the page source of
+// every site that uses it, so committing it is expected. Leave "" to disable.
+export const CF_BEACON_TOKEN = "";
+
 export function defaultSettings() {
   return {
     baseCurrency: "AED",

@@ -15,7 +15,7 @@ import {
 import { esc } from "./dashboard.js";
 import { initSelectEnhancer } from "./selects.js";
 import { icon, hydrateIcons } from "./icons.js";
-import { seedDemoIfNeeded, seedDemo } from "./demo.js";
+import { seedDemoIfNeeded, seedDemo, loadDemoAnalytics } from "./demo.js";
 
 let settings = loadSettings();
 let expenses = [];
@@ -119,7 +119,7 @@ function spendBase(e) {
 
 // ---------- boot ----------
 async function boot() {
-  if (IS_DEMO) { await seedDemoIfNeeded(); renderDemoBanner(); }
+  if (IS_DEMO) { await seedDemoIfNeeded(); renderDemoBanner(); loadDemoAnalytics(); }
   expenses = await allExpenses();
   await loadAlertState();
   await restorePendingReview(); // an unsaved fetch survives a reload
