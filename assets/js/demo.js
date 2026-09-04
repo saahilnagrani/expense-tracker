@@ -182,7 +182,9 @@ export function loadDemoAnalytics() {
   if (!CF_BEACON_TOKEN || document.getElementById("cf-beacon")) return;
   const s = document.createElement("script");
   s.id = "cf-beacon";
-  s.defer = true;
+  // Cloudflare ships the beacon as an ES module — loading it as a classic
+  // script would throw. type="module" is deferred by default.
+  s.type = "module";
   s.src = "https://static.cloudflareinsights.com/beacon.min.js";
   s.setAttribute("data-cf-beacon", JSON.stringify({ token: CF_BEACON_TOKEN }));
   document.head.appendChild(s);
