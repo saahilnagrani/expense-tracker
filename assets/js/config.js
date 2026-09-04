@@ -213,7 +213,7 @@ export const SETTINGS_KEY = IS_DEMO ? "et.settings.demo" : "et.settings.v1";
 // (https://saahilnagrani.github.io/expense-tracker/), copy the token, paste it
 // here. The token is not a secret — Cloudflare puts it in the page source of
 // every site that uses it, so committing it is expected. Leave "" to disable.
-export const CF_BEACON_TOKEN = "";
+export const CF_BEACON_TOKEN = "f6e02d956efb4bc9bd8ce9fc66639777";
 
 export function defaultSettings() {
   return {
