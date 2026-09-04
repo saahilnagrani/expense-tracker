@@ -9,7 +9,7 @@
 // sees exactly the same numbers.
 
 import { allExpenses, putMany, clearAll, saveSettings, uid } from "./db.js";
-import { defaultSettings } from "./config.js";
+import { defaultSettings, CF_BEACON_TOKEN } from "./config.js";
 import { guessCategory, dedupeKey } from "./parsers.js";
 
 const SEEDED_KEY = "et.demo.seeded";
@@ -173,4 +173,17 @@ export async function seedDemo() {
   saveSettings(demoSettings());
   await putMany(buildDemoExpenses());
   try { localStorage.setItem(SEEDED_KEY, "1"); } catch {}
+}
+
+// Cloudflare Web Analytics, demo link only. Injected at runtime rather than
+// sitting in index.html, so it can be gated behind demo mode and never loads
+// for the real app. No cookies, so no consent banner is required.
+export function loadDemoAnalytics() {
+  if (!CF_BEACON_TOKEN || document.getElementById("cf-beacon")) return;
+  const s = document.createElement("script");
+  s.id = "cf-beacon";
+  s.defer = true;
+  s.src = "https://static.cloudflareinsights.com/beacon.min.js";
+  s.setAttribute("data-cf-beacon", JSON.stringify({ token: CF_BEACON_TOKEN }));
+  document.head.appendChild(s);
 }
