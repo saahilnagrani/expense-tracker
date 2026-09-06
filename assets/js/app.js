@@ -1645,33 +1645,31 @@ function renderSettings() {
   const spName = settings.spouseName || "Their";
 
   const paneGeneral = () => `
-    <div class="grid cols-2 top">
-      <div class="card">
-        <div class="section-title">Base currency & FX rates</div>
-        <div class="field" style="max-width:220px"><label>Base currency</label><select id="setBase">${currencyOptions(settings.baseCurrency)}</select></div>
-        <p class="hint">Each rate = value of 1 unit in your base currency. Totals convert using these. Update them whenever you like — they aren't live.</p>
-        <div id="rateRows" class="mt">${curList.map(rateRowHtml).join("")}</div>
-        <div class="flex mt"><input id="newCur" placeholder="Add code e.g. SAR" style="max-width:140px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2)"><button class="btn sm secondary" id="addCur">Add currency</button></div>
+    <div class="card">
+      <div class="section-title">Categories</div>
+      <div id="catList" class="flex">${sortedCats().map((c) => `<span class="chip cat">${esc(c)} <button class="icon-btn catDel" data-c="${esc(c)}" style="padding:0 4px">✕</button></span>`).join("")}</div>
+      <div class="flex mt"><input id="newCat" placeholder="New category" style="max-width:200px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2)"><button class="btn sm secondary" id="addCat">Add</button></div>
+      <div class="flex mt" style="border-top:1px solid var(--border);padding-top:12px">
+        <button class="btn sm" id="recheckCats">Re-check all categories against the rules</button>
+        <span class="hint">Previews every saved transaction whose category no longer matches the current rules, then fixes them on your OK.</span>
       </div>
-      <div class="card">
-        <div class="section-title">Categories</div>
-        <div id="catList" class="flex">${sortedCats().map((c) => `<span class="chip cat">${esc(c)} <button class="icon-btn catDel" data-c="${esc(c)}" style="padding:0 4px">✕</button></span>`).join("")}</div>
-        <div class="flex mt"><input id="newCat" placeholder="New category" style="max-width:200px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2)"><button class="btn sm secondary" id="addCat">Add</button></div>
-        <div class="flex mt" style="border-top:1px solid var(--border);padding-top:12px">
-          <button class="btn sm" id="recheckCats">Re-check all categories against the rules</button>
-          <span class="hint">Previews every saved transaction whose category no longer matches the current rules, then fixes them on your OK.</span>
-        </div>
-        <div class="flex mt">
-          <button class="btn sm secondary" id="recat">Re-categorize uncategorized only</button>
-          <span class="hint">${expenses.filter((e) => !e.category).length} uncategorized · fills blank categories only, never changes existing ones</span>
-        </div>
-        <label class="flex mt" style="gap:8px;cursor:pointer;border-top:1px solid var(--border);padding-top:12px">
-          <input type="checkbox" id="attrFees" ${settings.attributeFees !== false ? "checked" : ""}>
-          <span>Attribute forex fees &amp; GST to the original purchase's category<br><span class="hint">A foreign-currency fee (and its GST) is filed under the purchase it was charged on, instead of Fees &amp; Interest. Ambiguous ones are left in Fees &amp; Interest and flagged for review.</span></span>
-        </label>
-        <div class="flex mt"><button class="btn sm secondary" id="reFees">Re-file saved forex fees now</button>
-          <span class="hint">Applies the above to transactions you've already imported.</span></div>
+      <div class="flex mt">
+        <button class="btn sm secondary" id="recat">Re-categorize uncategorized only</button>
+        <span class="hint">${expenses.filter((e) => !e.category).length} uncategorized · fills blank categories only, never changes existing ones</span>
       </div>
+      <label class="flex mt" style="gap:8px;cursor:pointer;border-top:1px solid var(--border);padding-top:12px">
+        <input type="checkbox" id="attrFees" ${settings.attributeFees !== false ? "checked" : ""}>
+        <span>Attribute forex fees &amp; GST to the original purchase's category<br><span class="hint">A foreign-currency fee (and its GST) is filed under the purchase it was charged on, instead of Fees &amp; Interest. Ambiguous ones are left in Fees &amp; Interest and flagged for review.</span></span>
+      </label>
+      <div class="flex mt"><button class="btn sm secondary" id="reFees">Re-file saved forex fees now</button>
+        <span class="hint">Applies the above to transactions you've already imported.</span></div>
+    </div>
+    <div class="card mt">
+      <div class="section-title">Base currency & FX rates</div>
+      <div class="field" style="max-width:220px"><label>Base currency</label><select id="setBase">${currencyOptions(settings.baseCurrency)}</select></div>
+      <p class="hint">Each rate = value of 1 unit in your base currency. Totals convert using these. Update them whenever you like — they aren't live.</p>
+      <div id="rateRows" class="mt">${curList.map(rateRowHtml).join("")}</div>
+      <div class="flex mt"><input id="newCur" placeholder="Add code e.g. SAR" style="max-width:140px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2)"><button class="btn sm secondary" id="addCur">Add currency</button></div>
     </div>`;
 
   const panePeople = () => `
