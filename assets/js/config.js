@@ -153,7 +153,7 @@ export const SOURCES = [
     passwordHint: "Check the HDFC email for the exact password format." },
   { bank: "enbd", label: "Emirates NBD A/c", kind: "statement", default: false, acct: true,
     from: "statement@emiratesnbd.com", currency: "AED",
-    passwordHint: "Check the Emirates NBD email for the password format." },
+    passwordHint: "First 4 letters of your name (CAPS) + DOB as DDMM, e.g. CKAJ1102." },
   // ENBD credit cards come from the same sender as the account statement,
   // separated by the household Gmail label, and are two different cards emailed
   // with distinct subjects — split them by `subject:` so each is its own card.
@@ -163,17 +163,17 @@ export const SOURCES = [
   //    hers (Harshi Forward label) tagged with her name.
   { bank: "enbd-noon", label: "ENBD Noon Visa", kind: "statement", default: true, spouseOnly: true,
     from: "statement@emiratesnbd.com", currency: "AED", query: 'subject:noon',
-    passwordHint: "Check the Emirates NBD email for the password format." },
+    passwordHint: "First 4 letters of your name (CAPS) + DOB as DDMM, e.g. CKAJ1102." },
   { bank: "enbd-etihad", label: "ENBD Etihad Guest Visa", kind: "statement", default: true, shared: true,
     from: "statement@emiratesnbd.com", currency: "AED", query: 'subject:"etihad guest"',
-    passwordHint: "Check the Emirates NBD email for the password format." },
+    passwordHint: "First 4 letters of your name (CAPS) + DOB as DDMM, e.g. CKAJ1102." },
   // Spouse-only: wife's (now cancelled) Commercial Bank of Dubai card. Her
   // statements arrive under the household Gmail label. CBD emails both credit-
   // card AND bank-account statements from this address, so restrict to the
   // credit-card ones by subject.
   { bank: "cbd-h", label: "CBD Credit Card", kind: "statement", default: true, spouseOnly: true,
     from: "estatements@cbdstatements.ae", currency: "AED", query: 'subject:"credit card"',
-    passwordHint: "Same format as the Emirates NBD statement password." },
+    passwordHint: "First 4 letters of your name (CAPS) + DOB as DDMM, e.g. CKAJ1102." },
   // --- Per-transaction alert sources (India). One email per UPI payment,
   //     transfer or card spend, so there is no PDF to open. The `from`
   //     addresses below are the common ones and are easy to correct in place:
