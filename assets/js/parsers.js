@@ -488,9 +488,14 @@ function linkGroup(rows, flag = true) {
     }
   }
 
-  // apply fee -> parent category
+  // apply fee -> parent category. Only when the purchase actually has one:
+  // inheriting unconditionally means a purchase no rule matched (blank
+  // category) wipes the fee's own "Fees & Interest", leaving a row that is
+  // demonstrably a fee sitting uncategorised. Attribution should improve the
+  // fee's category or leave it alone, never take one away.
   for (const fi of Object.keys(feeParent)) {
-    rows[fi].category = rows[feeParent[fi]].category;
+    const parentCat = rows[feeParent[fi]].category;
+    if (parentCat) rows[fi].category = parentCat;
     rows[fi]._feeParent = feeParent[fi];
   }
 
@@ -502,7 +507,7 @@ function linkGroup(rows, flag = true) {
       (gst.amount / rows[fi].amount) >= 0.14 && (gst.amount / rows[fi].amount) <= 0.22);
     if (!cands.length) continue;
     const cats = new Set(cands.map((fi) => rows[fi].category));
-    if (cats.size === 1) gst.category = rows[cands[0]].category;
+    if (cats.size === 1 && rows[cands[0]].category) gst.category = rows[cands[0]].category;
     else if (flag) { gst.needsReview = true; gst.reviewReason = addReason(gst.reviewReason, "GST: multiple possible forex fees — set the category manually"); }
   }
 }
