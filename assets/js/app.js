@@ -79,6 +79,31 @@ function catOptionsHtml(selected) {
 // Who holds a card. Defaults come from the SOURCES flags so nothing changes
 // for anyone who never touches the toggles: `shared` means both people have
 // one, `spouseOnly` means only the household member does.
+// Import selection is per holder, not per card: a card you both hold is two
+// separate rows, so you can fetch yours without fetching theirs. Yours is
+// stored under the bare bank id (what the list held before this became
+// per-holder), theirs under "bank@spouse".
+const SPOUSE_SUFFIX = "@spouse";
+const srcKey = (bank, who) => (who === "spouse" ? bank + SPOUSE_SUFFIX : bank);
+const isEnabled = (src, who) => settings.enabledSources.includes(srcKey(src.bank, who));
+
+// One-time expansion of the old flat list, where a single entry meant "import
+// this card for whoever holds it". Keep that meaning by turning each entry into
+// one per holder, so nothing anybody has selected today changes.
+function migrateEnabledSources() {
+  if (settings.enabledSourcesV2) return;
+  const next = [];
+  for (const s of SOURCES) {
+    if (!settings.enabledSources.includes(s.bank)) continue;
+    const own = sourceOwners(s);
+    if (own.me) next.push(s.bank);
+    if (own.spouse) next.push(srcKey(s.bank, "spouse"));
+  }
+  settings.enabledSources = next;
+  settings.enabledSourcesV2 = true;
+  saveSettings(settings);
+}
+
 function sourceOwners(src) {
   const saved = (settings.owners || {})[src.bank];
   if (saved) return { me: !!saved.me, spouse: !!saved.spouse };
@@ -141,6 +166,7 @@ async function boot() {
   await materializeRecurring();
   await migrateRefundCategory();
   migrateCategoryList();
+  migrateEnabledSources();
   updateBasePill();
   hydrateIcons();
   initSelectEnhancer();
@@ -1042,22 +1068,33 @@ function renderImport() {
       <p class="hint">Reads matching bank emails in your account, parses the transactions, and shows them for your review before anything is saved. Read-only access; nothing is sent anywhere except Google.</p>
       ${IS_DEMO ? `<div class="warnbox mt">Gmail import is switched off in the demo — it would need access to a real inbox. The sample transactions on the other tabs are what an import produces. Everything else is fully usable: edit categories, delete rows, add fixed expenses, then hit <b>Reset demo data</b> in the banner to start over.</div>` : ""}
       ${(() => {
-        const spName = settings.spouseName || "theirs";
-        const chip = (s) => {
+        const spName = settings.spouseName || "Their";
+        const chip = (s, who) => {
           const mode = sourceMode(s);
+          // Statements-vs-alerts is a property of the card, not of who holds
+          // it, so both holders' rows show it and flipping either flips both.
           const badge = canSwitchMode(s)
             ? `<button type="button" class="srcMode" data-bank="${s.bank}" title="Importing from ${mode === "alert" ? "per-transaction alert emails — click for monthly statements" : "monthly statement PDFs — click for per-transaction alerts"}">${mode === "alert" ? "alerts" : "statements"}</button>`
             : `<span class="chip-sub">${mode === "alert" ? "alerts" : "statements"}</span>`;
-          return `<label class="chip" style="cursor:pointer;user-select:none"><input type="checkbox" class="srcChk" value="${s.bank}" ${settings.enabledSources.includes(s.bank) ? "checked" : ""} style="margin-right:6px">${esc(s.label)}${s.spouseOnly ? ` <span class="chip-sub">(${esc(spName)})</span>` : ""} ${badge}</label>`;
+          return `<label class="chip" style="cursor:pointer;user-select:none"><input type="checkbox" class="srcChk" value="${srcKey(s.bank, who)}" ${isEnabled(s, who) ? "checked" : ""} style="margin-right:6px">${esc(s.label)} ${badge}</label>`;
         };
-        const vis = (s) => (!s.spouseOnly || settings.spouseEnabled);
-        const cc = SOURCES.filter((s) => vis(s) && !s.acct);
-        const acct = SOURCES.filter((s) => vis(s) && s.acct);
-        return `
-        <div class="pill-group-label mt">Credit cards</div>
-        <div class="pill-tabs">${cc.map(chip).join("")}</div>
-        <div class="pill-group-label mt">Bank accounts</div>
-        <div class="pill-tabs">${acct.map(chip).join("")}</div>`;
+        // Who holds a card comes from Settings → Cards. With no second person
+        // there is only one holder, so the person headings are left off.
+        const holders = settings.spouseEnabled
+          ? [["me", "Mine"], ["spouse", `${spName}'s`]]
+          : [["me", ""]];
+        return holders.map(([who, label]) => {
+          const mine = SOURCES.filter((s) => sourceOwners(s)[who]);
+          const cc = mine.filter((s) => !s.acct);
+          const acct = mine.filter((s) => s.acct);
+          if (!cc.length && !acct.length) return "";
+          return `
+        ${label ? `<div class="holder-label mt">${esc(label)}</div>` : ""}
+        ${cc.length ? `<div class="pill-group-label${label ? "" : " mt"}">Credit cards</div>
+        <div class="pill-tabs">${cc.map((s) => chip(s, who)).join("")}</div>` : ""}
+        ${acct.length ? `<div class="pill-group-label mt">Bank accounts</div>
+        <div class="pill-tabs">${acct.map((s) => chip(s, who)).join("")}</div>` : ""}`;
+        }).join("");
       })()}
       ${connected ? `
       <div class="flex mt" style="gap:8px;flex-wrap:wrap;align-items:center">
@@ -1142,7 +1179,7 @@ document.addEventListener("visibilitychange", async () => {
 });
 
 async function fetchAndParse(range = { mode: "new" }) {
-  const chosen = SOURCES.filter((s) => settings.enabledSources.includes(s.bank));
+  const chosen = SOURCES.filter((s) => isEnabled(s, "me") || isEnabled(s, "spouse"));
   if (!chosen.length) return toast("Pick at least one source", "err");
   const after = new Date();
   after.setMonth(after.getMonth() - settings.lookbackMonths);
@@ -1280,10 +1317,14 @@ async function fetchAndParse(range = { mode: "new" }) {
       try {
         const specs = [];
         const own = sourceOwners(src);
+        // Each holder is selected separately, so only fetch the ones ticked.
+        // Ownership is checked too: a tick left behind after a card changed
+        // hands in Settings should not resurrect that person's search.
+        const on = (who) => isEnabled(src, who) && own[who];
         if (spLabel) {
-          if (own.me) specs.push({ labelQuery: `-label:"${spLabel}"`, cardLabel: src.label, password: settings.passwords[src.bank] || "", owner: "me" });
-          if (own.spouse) specs.push({ labelQuery: `label:"${spLabel}"`, cardLabel: `${src.label} (${spName})`, password: (settings.spousePasswords || {})[src.bank] || "", owner: "spouse" });
-        } else if (own.me) {
+          if (on("me")) specs.push({ labelQuery: `-label:"${spLabel}"`, cardLabel: src.label, password: settings.passwords[src.bank] || "", owner: "me" });
+          if (on("spouse")) specs.push({ labelQuery: `label:"${spLabel}"`, cardLabel: `${src.label} (${spName})`, password: (settings.spousePasswords || {})[src.bank] || "", owner: "spouse" });
+        } else if (on("me")) {
           specs.push({ labelQuery: "", cardLabel: src.label, password: settings.passwords[src.bank] || "", owner: "me" });
         }
         const mode = sourceMode(src);
