@@ -460,6 +460,23 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
   padding: 7px 11px; border-radius: 8px; cursor: pointer; white-space: nowrap;
   transition: background .16s ease, color .16s ease;
 }
+/* Settings sub-navigation: the section picker on the left, and the standing
+   note that there is no Save button, with a "Saved" flash on each write. */
+.set-head { display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.set-auto { display: inline-flex; align-items: center; }
+.set-saved { margin-left: 8px; color: var(--good); font-weight: 700; opacity: 0; }
+.set-saved.show { animation: set-saved-flash 1.6s ease forwards; }
+@keyframes set-saved-flash {
+  0% { opacity: 0; } 12% { opacity: 1; } 68% { opacity: 1; } 100% { opacity: 0; }
+}
+@media (max-width: 640px) {
+  .set-head { flex-direction: column; align-items: stretch; gap: 8px; }
+  /* five sections don't fit a phone's width — let the track scroll instead of
+     wrapping into a ragged block. */
+  .set-head .seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .set-head .seg::-webkit-scrollbar { display: none; }
+}
 .seg > button:hover { color: var(--text); }
 .seg > button.on { background: var(--brand); color: #fff; }
 .seg > button:active { transform: translateY(1px); }

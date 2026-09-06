@@ -1617,9 +1617,34 @@ async function saveReview() {
 }
 
 // ---------- Settings ----------
+// Split into panes rather than one 3,000px scroll: the password list alone was
+// 39% of the page height, and the Save button sat below all of it.
+const SETTINGS_PANES = [["general", "General"], ["people", "People"],
+  ["google", "Google"], ["cards", "Cards"], ["data", "Data"]];
+let settingsPane = "general";
+
+// Every control writes its own value the moment you change it — there is no
+// Save button. The old one wrote every field on the page in one go, which is
+// how a screen of empty password boxes could erase nine stored passwords in a
+// single click. A control can now only ever touch its own setting.
+// `sync: false` for values that are device-local (Client ID, auto-sync), so
+// they don't bump the prefs watermark other devices compare against.
+function settingsSave({ sync = true } = {}) {
+  saveSettings(settings);
+  if (sync) markPrefsChanged();
+  scheduleSync();
+  const el = $("#setSaved");
+  if (!el) return;
+  el.classList.remove("show");
+  void el.offsetWidth; // restart the animation even on back-to-back saves
+  el.classList.add("show");
+}
+
 function renderSettings() {
   const curList = Object.keys(settings.rates);
-  views.innerHTML = `
+  const spName = settings.spouseName || "Their";
+
+  const paneGeneral = () => `
     <div class="grid cols-2 top">
       <div class="card">
         <div class="section-title">Base currency & FX rates</div>
@@ -1647,44 +1672,47 @@ function renderSettings() {
         <div class="flex mt"><button class="btn sm secondary" id="reFees">Re-file saved forex fees now</button>
           <span class="hint">Applies the above to transactions you've already imported.</span></div>
       </div>
-    </div>
+    </div>`;
 
-    <div class="grid cols-2 top mt">
-      <div class="card">
-        <div class="section-title">People</div>
-        <p class="hint">If a family member's statements are forwarded into this Gmail with a label (yours aren't), import theirs too — tagged with their name so you can filter by person, all in one household total.</p>
-        <label class="flex" style="gap:8px;cursor:pointer;font-weight:600;color:var(--text)"><input type="checkbox" id="spEnabled" ${settings.spouseEnabled ? "checked" : ""}> Also import a second person's cards</label>
-        <div id="spOpts" class="mt" style="${settings.spouseEnabled ? "" : "display:none"}">
-          <div class="row">
-            <div class="field"><label>Their name (tag)</label><input id="spName" value="${esc(settings.spouseName)}" placeholder="e.g. Harshita"></div>
-            <div class="field"><label>Gmail label on their statements</label><input id="spLabel" value="${esc(settings.spouseLabel)}" placeholder="e.g. Harshi Forward"></div>
-          </div>
-          <p class="hint">Each card below then offers them a password box too — tick the ones they actually hold.</p>
+  const panePeople = () => `
+    <div class="card">
+      <div class="section-title">People</div>
+      <p class="hint">If a family member's statements are forwarded into this Gmail with a label (yours aren't), import theirs too — tagged with their name so you can filter by person, all in one household total.</p>
+      <label class="flex" style="gap:8px;cursor:pointer;font-weight:600;color:var(--text)"><input type="checkbox" id="spEnabled" ${settings.spouseEnabled ? "checked" : ""}> Also import a second person's cards</label>
+      <div id="spOpts" class="mt" style="${settings.spouseEnabled ? "" : "display:none"}">
+        <div class="row">
+          <div class="field"><label>Their name (tag)</label><input id="spName" value="${esc(settings.spouseName)}" placeholder="e.g. Harshita"></div>
+          <div class="field"><label>Gmail label on their statements</label><input id="spLabel" value="${esc(settings.spouseLabel)}" placeholder="e.g. Harshi Forward"></div>
         </div>
+        <p class="hint">Every card under <b>Cards</b> then offers them a password box too — tick the ones they actually hold.</p>
       </div>
-      <div class="card">
-        <div class="section-title">Google account</div>
-        <p class="hint">One connection covers both jobs: reading statements out of Gmail, and syncing across your devices through a private Google Drive folder only this app can read.</p>
-        <div class="field"><label>Google OAuth Client ID</label><input id="setClient" value="${esc(settings.googleClientId)}" placeholder="xxxxx.apps.googleusercontent.com"></div>
-        <p class="hint">Create a free <b>Web</b> OAuth Client ID in Google Cloud, enable the Gmail API, and add this site's URL as an authorized JavaScript origin. Full walkthrough in the README. It stays on this device — it's the one setting that never syncs.</p>
-        <div class="flex mt">
-          ${GM.isSignedIn()
-            ? `<span class="okbox" style="padding:6px 10px">Connected</span><button class="btn" id="syncNow">Sync now</button>`
-            : `<button class="btn" id="syncConnect" ${settings.googleClientId ? "" : "disabled"}>Connect Google account</button>`}
-          <label class="flex" style="gap:6px;cursor:pointer"><input type="checkbox" id="autoSync" ${settings.autoSync ? "checked" : ""}> Auto-sync on changes</label>
-        </div>
-        <div class="hint mt" id="syncStatus"></div>
-        ${!settings.googleClientId ? `<div class="hint mt">Paste your Client ID above and press <b>Save settings</b> at the bottom to enable connecting.</div>` : ""}
-      </div>
-    </div>
+    </div>`;
 
-    <div class="card mt">
+  const paneGoogle = () => `
+    <div class="card">
+      <div class="section-title">Google account</div>
+      <p class="hint">One connection covers both jobs: reading statements out of Gmail, and syncing across your devices through a private Google Drive folder only this app can read.</p>
+      <div class="field"><label>Google OAuth Client ID</label><input id="setClient" value="${esc(settings.googleClientId)}" placeholder="xxxxx.apps.googleusercontent.com"></div>
+      <p class="hint">Create a free <b>Web</b> OAuth Client ID in Google Cloud, enable the Gmail API, and add this site's URL as an authorized JavaScript origin. Full walkthrough in the README. It stays on this device — it's the one setting that never syncs.</p>
+      <div class="flex mt">
+        ${GM.isSignedIn()
+          ? `<span class="okbox" style="padding:6px 10px">Connected</span><button class="btn" id="syncNow">Sync now</button>`
+          : `<button class="btn" id="syncConnect" ${settings.googleClientId ? "" : "disabled"}>Connect Google account</button>`}
+        <label class="flex" style="gap:6px;cursor:pointer"><input type="checkbox" id="autoSync" ${settings.autoSync ? "checked" : ""}> Auto-sync on changes</label>
+      </div>
+      <div class="hint mt" id="syncStatus"></div>
+      ${!settings.googleClientId ? `<div class="hint mt">Paste your Client ID above — it saves as soon as you leave the box, and the Connect button lights up.</div>` : ""}
+    </div>`;
+
+  const paneCards = () => `
+    <div class="card">
       <div class="section-title">Statement PDF passwords</div>
-      <p class="hint">Bank statement PDFs are encrypted. Tick who holds each card, and give the password for it. Leave a box blank to keep the password already saved — saving never clears one. These sync across your devices through your private Google Drive app folder.</p>
+      <p class="hint">Bank statement PDFs are encrypted. Tick who holds each card, and give the password for it. Leave a box blank to keep the password already saved — nothing here ever clears one. These sync across your devices through your private Google Drive app folder.${settings.spouseEnabled ? "" : ` Turn on a second person under <b>People</b> to give ${esc(spName.toLowerCase() === "their" ? "them" : spName)} their own boxes.`}</p>
       ${pwList()}
-    </div>
+    </div>`;
 
-    <div class="card mt">
+  const paneData = () => `
+    <div class="card">
       <div class="section-title">Data</div>
       <p class="hint">Everything is stored locally in this browser (IndexedDB). Back it up or move it between devices here.</p>
       <div class="flex">
@@ -1700,16 +1728,67 @@ function renderSettings() {
         <div class="field"><label>To</label><input id="cardTo" placeholder="New card name"></div>
       </div>
       <div class="flex mt"><button class="btn sm secondary" id="cardRename">Rename card</button></div>
-    </div>
-    <div class="flex mt"><button class="btn" id="saveSet">Save settings</button><span id="setMsg" class="hint"></span></div>`;
+    </div>`;
 
-  $("#addCur").addEventListener("click", () => {
-    const c = $("#newCur").value.trim().toUpperCase();
-    if (c && !settings.rates[c]) { settings.rates[c] = 1; renderSettings(); }
+  const panes = { general: paneGeneral, people: panePeople, google: paneGoogle, cards: paneCards, data: paneData };
+  const tabs = SETTINGS_PANES.map(([id, label]) =>
+    `<button type="button" class="${settingsPane === id ? "on" : ""}" data-pane="${id}">${label}</button>`).join("");
+
+  views.innerHTML = `
+    <div class="set-head">
+      <div class="seg" role="group" aria-label="Settings section">${tabs}</div>
+      <span class="hint set-auto">Changes save as you make them<span id="setSaved" class="set-saved">Saved ✓</span></span>
+    </div>
+    ${(panes[settingsPane] || paneGeneral)()}`;
+
+  $$(".set-head .seg button").forEach((b) => b.addEventListener("click", () => {
+    settingsPane = b.dataset.pane;
+    renderSettings();
+    window.scrollTo(0, 0);
+  }));
+
+  // --- General ---
+  // Rates are "value of 1 unit in the base currency", so changing the base
+  // invalidates every one of them — switching AED→INR without this silently
+  // multiplies all INR spend by 0.044. Re-express them against the new base.
+  $("#setBase")?.addEventListener("change", (e) => {
+    const newBase = e.target.value;
+    if (newBase === settings.baseCurrency) return;
+    const f = settings.rates[newBase];
+    if (f && isFinite(f) && f > 0) {
+      const next = {};
+      for (const [c, r] of Object.entries(settings.rates)) {
+        next[c] = isFinite(r) && r > 0 ? +(r / f).toPrecision(8) : r;
+      }
+      next[newBase] = 1;
+      settings.rates = next;
+      toast(`Exchange rates re-based to ${newBase}`, "ok");
+    }
+    settings.baseCurrency = newBase;
+    settingsSave();
+    updateBasePill();
+    renderSettings();
   });
-  $("#addCat").addEventListener("click", () => {
+  $$(".rateIn").forEach((el) => el.addEventListener("change", () => {
+    settings.rates[el.dataset.cur] = parseFloat(el.value) || 0;
+    settingsSave();
+  }));
+  $("#addCur")?.addEventListener("click", () => {
+    const c = $("#newCur").value.trim().toUpperCase();
+    if (c && !settings.rates[c]) { settings.rates[c] = 1; settingsSave(); renderSettings(); }
+  });
+  $("#addCat")?.addEventListener("click", () => {
     const c = $("#newCat").value.trim();
-    if (c && !settings.categories.includes(c)) { settings.categories.push(c); renderSettings(); }
+    if (c && !settings.categories.includes(c)) { settings.categories.push(c); settingsSave(); renderSettings(); }
+  });
+  $$(".catDel").forEach((b) => b.addEventListener("click", () => {
+    settings.categories = settings.categories.filter((c) => c !== b.dataset.c);
+    settingsSave();
+    renderSettings();
+  }));
+  $("#attrFees")?.addEventListener("change", (e) => {
+    settings.attributeFees = e.target.checked;
+    settingsSave();
   });
   $("#recat")?.addEventListener("click", async () => {
     const updated = [];
@@ -1725,25 +1804,76 @@ function renderSettings() {
   });
   $("#reFees")?.addEventListener("click", reapplyFeeAttribution);
   $("#recheckCats")?.addEventListener("click", recheckCategories);
-  $$(".catDel").forEach((b) => b.addEventListener("click", () => {
-    settings.categories = settings.categories.filter((c) => c !== b.dataset.c); renderSettings();
-  }));
+
+  // --- People ---
+  $("#spEnabled")?.addEventListener("change", (e) => {
+    settings.spouseEnabled = e.target.checked;
+    const el = $("#spOpts"); if (el) el.style.display = e.target.checked ? "" : "none";
+    settingsSave();
+  });
+  $("#spName")?.addEventListener("change", (e) => {
+    settings.spouseName = e.target.value.trim();
+    settingsSave();
+  });
+  $("#spLabel")?.addEventListener("change", (e) => {
+    settings.spouseLabel = e.target.value.trim();
+    settingsSave();
+  });
+
+  // --- Google (Client ID and auto-sync are device-local, so no prefs bump) ---
+  $("#setClient")?.addEventListener("change", (e) => {
+    const wasEmpty = !settings.googleClientId;
+    settings.googleClientId = e.target.value.trim();
+    settingsSave({ sync: false });
+    if (wasEmpty && settings.googleClientId) renderSettings(); // enables Connect
+  });
+  $("#autoSync")?.addEventListener("change", (e) => {
+    settings.autoSync = e.target.checked;
+    settingsSave({ sync: false });
+    toast(settings.autoSync ? "Auto-sync on" : "Auto-sync off", "ok");
+  });
   $("#syncConnect")?.addEventListener("click", async () => {
     try { await GM.connect(settings.googleClientId, settings.googleEmail); await rememberGoogleEmail(); await runSync(false); renderSettings(); }
     catch (e) { toast(e.message, "err"); }
   });
   $("#syncNow")?.addEventListener("click", () => runSync(false));
-  $("#autoSync")?.addEventListener("change", (e) => {
-    settings.autoSync = e.target.checked; saveSettings(settings);
-    toast(settings.autoSync ? "Auto-sync on" : "Auto-sync off", "ok");
-  });
   lastSyncedAt().then((t) => {
     const el = $("#syncStatus");
     if (el) el.textContent = t ? "Last synced " + new Date(t).toLocaleString() : "Not synced yet on this device.";
   });
-  $("#expJson").addEventListener("click", exportJson);
-  $("#impJson").addEventListener("change", importJson);
-  $("#wipe").addEventListener("click", async () => {
+
+  // --- Cards ---
+  // A card nobody holds has no password to give, so grey its box out. The
+  // stored value is left alone — unticking is not a way to lose a password.
+  $$(".ownCk").forEach((ck) => ck.addEventListener("change", () => {
+    const row = ck.closest(".pw-own-row");
+    const input = row?.querySelector("input[type=password]");
+    if (input) input.disabled = !ck.checked;
+    row?.classList.toggle("off", !ck.checked);
+    settings.owners = settings.owners || {};
+    const o = settings.owners[ck.dataset.bank] || {};
+    o[ck.dataset.who] = ck.checked;
+    settings.owners[ck.dataset.bank] = o;
+    settingsSave();
+  }));
+  // A blank box means "leave the saved password alone", never "erase it", so
+  // an empty value writes nothing at all. Clearing one is done by typing over it.
+  $$(".pwIn").forEach((el) => el.addEventListener("change", () => {
+    if (!el.value) return;
+    settings.passwords[el.dataset.bank] = el.value;
+    settingsSave();
+  }));
+  $$(".spPw").forEach((el) => el.addEventListener("change", () => {
+    if (!el.value) return;
+    settings.spousePasswords = settings.spousePasswords || {};
+    settings.spousePasswords[el.dataset.bank] = el.value;
+    settingsSave();
+  }));
+
+  // --- Data ---
+  $("#expJson")?.addEventListener("click", exportJson);
+  $("#impJson")?.addEventListener("change", importJson);
+  $("#wipe")?.addEventListener("click", async () => {
     if (!confirm("Delete ALL transactions? This cannot be undone.")) return;
     await clearAll(); expenses = []; toast("All data deleted", "ok"); go("dashboard");
   });
@@ -1767,70 +1897,6 @@ function renderSettings() {
     scheduleSync();
     toast(`Renamed ${updated.length} transaction(s) ✓`, "ok");
     renderSettings();
-  });
-  $("#spEnabled")?.addEventListener("change", (e) => {
-    const on = e.target.checked;
-    const el = $("#spOpts"); if (el) el.style.display = on ? "" : "none";
-    const list = $(".pw-list"); if (list) list.classList.toggle("hide-spouse", !on);
-  });
-  // A card nobody holds has no password to give, so grey its box out. The
-  // stored value is left alone — unticking is not a way to lose a password.
-  $$(".ownCk").forEach((ck) => ck.addEventListener("change", () => {
-    const row = ck.closest(".pw-own-row");
-    const input = row?.querySelector("input[type=password]");
-    if (input) input.disabled = !ck.checked;
-    row?.classList.toggle("off", !ck.checked);
-  }));
-  // Retitle the household boxes as you type their name, so the label matches
-  // before you've saved.
-  $("#spName")?.addEventListener("input", (e) => {
-    const n = e.target.value.trim() || "Their";
-    $$(".pw-own-row.spcol .pw-own span").forEach((s) => { s.textContent = `${n}'s`; });
-  });
-  $("#saveSet").addEventListener("click", async () => {
-    settings.googleClientId = $("#setClient").value.trim();
-    $$(".rateIn").forEach((el) => { settings.rates[el.dataset.cur] = parseFloat(el.value) || 0; });
-    // Rates are "value of 1 unit in the base currency", so changing the base
-    // invalidates every one of them — switching AED→INR without this silently
-    // multiplies all INR spend by 0.044. Re-express them against the new base.
-    const newBase = $("#setBase").value;
-    if (newBase !== settings.baseCurrency) {
-      const f = settings.rates[newBase];
-      if (f && isFinite(f) && f > 0) {
-        const next = {};
-        for (const [c, r] of Object.entries(settings.rates)) {
-          next[c] = isFinite(r) && r > 0 ? +(r / f).toPrecision(8) : r;
-        }
-        next[newBase] = 1;
-        settings.rates = next;
-        toast(`Exchange rates re-based to ${newBase}`, "ok");
-      }
-    }
-    settings.baseCurrency = newBase;
-    // A blank box means "leave the saved password alone", never "erase it".
-    // Writing el.value unconditionally meant one Save with an empty field wiped
-    // the stored password — and markPrefsChanged then pushed the blanks to
-    // Drive, where the union overwrote the good values on every other device.
-    // Clearing one is done by typing over it; there is no way to blank a field
-    // by accident and lose a password you can't recover.
-    $$(".pwIn").forEach((el) => { if (el.value) settings.passwords[el.dataset.bank] = el.value; });
-    settings.spouseEnabled = $("#spEnabled")?.checked || false;
-    settings.spouseName = $("#spName")?.value.trim() || "";
-    settings.spouseLabel = $("#spLabel")?.value.trim() || "";
-    settings.spousePasswords = settings.spousePasswords || {};
-    $$(".spPw").forEach((el) => { if (el.value) settings.spousePasswords[el.dataset.bank] = el.value; });
-    settings.owners = settings.owners || {};
-    $$(".ownCk").forEach((el) => {
-      const o = settings.owners[el.dataset.bank] || {};
-      o[el.dataset.who] = el.checked;
-      settings.owners[el.dataset.bank] = o;
-    });
-    settings.attributeFees = $("#attrFees")?.checked !== false;
-    saveSettings(settings);
-    await markPrefsChanged(); // base currency / rates / categories are synced prefs
-    updateBasePill();
-    scheduleSync();
-    toast("Settings saved ✓", "ok");
   });
 }
 
