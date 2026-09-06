@@ -800,6 +800,7 @@ function renderExpenses() {
         <select id="fmerchant" class="fsel" style="max-width:260px"><option value="">All merchants</option>${merchCounts.map(([m, n]) => `<option value="${esc(m)}" ${expFilter.merchant === m ? "selected" : ""}>${esc(m)} (${n})</option>`).join("")}</select>
         <button class="btn sm secondary" id="fclear">Clear</button>
         <span class="spacer"></span>
+        <button class="btn sm" id="addTxn">${icon("plus",15)} Add</button>
         <button class="btn sm secondary" id="expCsv" title="Export CSV" aria-label="Export CSV">${icon("download",15)} CSV</button>
       </div>
       <div class="hint mt" id="expCount"></div>
@@ -872,6 +873,7 @@ function renderExpenses() {
   }));
   $("#fclear").addEventListener("click", () => { expFilter = { q: "", month: "", card: "", cat: "", merchant: "" }; expPage = 0; renderExpenses(); });
   $("#expCsv").addEventListener("click", () => exportCsv(computeFiltered()));
+  $("#addTxn").addEventListener("click", () => openAddTxn(cards));
   paintExp();
 }
 let _t;
@@ -1989,6 +1991,76 @@ function toast(msg, kind = "") {
   el.textContent = msg; el.className = "toast " + kind; el.hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => (el.hidden = true), 2800);
 }
+// Add a transaction by hand. The data model has always supported source
+// "manual" (the Expenses table even renders a chip for it) but nothing could
+// create one: Fixed is recurring-only and Import is Gmail-only, so a cash
+// payment, or a card whose statement isn't emailed as a PDF, had no way in.
+function openAddTxn(knownCards = []) {
+  const today = new Date().toISOString().slice(0, 10);
+  // Offer the card labels already in use, plus the configured source labels
+  // (with the household suffix), so a hand-added row files under the same name
+  // an imported one would get instead of a near-miss spelling.
+  const spName = settings.spouseName || "";
+  const sourceLabels = [];
+  for (const s of SOURCES) {
+    const own = sourceOwners(s);
+    if (own.me) sourceLabels.push(s.label);
+    if (own.spouse && settings.spouseEnabled) sourceLabels.push(`${s.label}${spName ? ` (${spName})` : ""}`);
+  }
+  const cardList = [...new Set([...knownCards, ...sourceLabels, "Cash"])].sort();
+
+  openModal("Add transaction", `
+    <div class="row">
+      <div class="field" style="max-width:170px"><label>Date</label><input type="date" id="mtDate" value="${today}"></div>
+      <div class="field" style="flex:2;min-width:180px"><label>Description</label><input id="mtDesc" placeholder="e.g. Carrefour Mall of Emirates"></div>
+    </div>
+    <div class="row mt">
+      <div class="field" style="max-width:150px"><label>Amount</label><input type="number" step="0.01" min="0" id="mtAmt" placeholder="0.00"></div>
+      <div class="field" style="max-width:110px"><label>Currency</label><select id="mtCur">${currencyOptions(settings.baseCurrency)}</select></div>
+      <div class="field" style="max-width:140px"><label>Type</label><select id="mtKind"><option value="expense">Expense</option><option value="credit">Credit / refund</option></select></div>
+    </div>
+    <div class="row mt">
+      <div class="field"><label>Category</label><select id="mtCat"><option value="">—</option>${sortedCats().map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+      <div class="field"><label>Card / paid via</label><input id="mtCard" list="mtCardList" placeholder="e.g. Cash">
+        <datalist id="mtCardList">${cardList.map((c) => `<option value="${esc(c)}"></option>`).join("")}</datalist></div>
+    </div>
+    <div class="hint mt">Leave the category blank and it'll be guessed from the description, the same way an import does.</div>
+    <div class="flex mt"><button class="btn" id="mtSave">Add transaction</button><button class="btn secondary" id="mtCancel">Cancel</button></div>`);
+
+  $("#mtCancel").addEventListener("click", closeModal);
+  $("#mtDesc").focus();
+  $("#mtSave").addEventListener("click", async () => {
+    const date = $("#mtDate").value;
+    const description = $("#mtDesc").value.trim();
+    const amount = Math.abs(parseFloat($("#mtAmt").value));
+    if (!date) return toast("Pick a date", "err");
+    if (!description) return toast("Add a description", "err");
+    if (!isFinite(amount) || amount <= 0) return toast("Enter an amount above zero", "err");
+
+    const card = $("#mtCard").value.trim();
+    const e = {
+      id: uid(), date, description, amount,
+      currency: $("#mtCur").value,
+      kind: $("#mtKind").value,
+      category: $("#mtCat").value || guessCategory(description) || "",
+      card: card || "Cash",
+      source: "manual",
+      // Filed under whoever the card belongs to, so the household split and
+      // per-person filters treat it like an imported row.
+      owner: spName && card.endsWith(`(${spName})`) ? "spouse" : "me",
+      createdAt: new Date().toISOString(),
+      updatedAt: Date.now(),
+    };
+    e.dedupeKey = dedupeKey(e);
+    await putMany([e]);
+    expenses = await allExpenses();
+    scheduleSync();
+    closeModal();
+    toast("Transaction added ✓", "ok");
+    renderExpenses();
+  });
+}
+
 function openModal(title, html) {
   $("#modalTitle").textContent = title;
   $("#modalBody").innerHTML = html;
