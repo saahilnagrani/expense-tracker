@@ -130,6 +130,20 @@ export function saveSettings(s) {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
 }
 
+// The prefs watermark decides whether local settings or the Drive blob wins a
+// sync, so it has to live in the same store as the settings it guards. It used
+// to sit in IndexedDB meta while settings sat in localStorage: anything that
+// emptied IndexedDB alone — a store rebuild, Safari evicting it, a partial
+// site-data clear — silently reset it to 0 and handed the next sync to an
+// arbitrarily old Drive blob, quietly reverting settings that were never edited.
+const PREFS_AT_KEY = SETTINGS_KEY + ".prefsAt";
+export function loadPrefsUpdatedAt() {
+  try { return Number(localStorage.getItem(PREFS_AT_KEY)) || 0; } catch { return 0; }
+}
+export function savePrefsUpdatedAt(ts) {
+  try { localStorage.setItem(PREFS_AT_KEY, String(ts || 0)); } catch {}
+}
+
 // ---- Meta store (import cursors etc.) ----
 export async function getMeta(key, fallback = null) {
   const os = await tx(META);
