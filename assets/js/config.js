@@ -243,6 +243,10 @@ export function defaultSettings() {
     spouseName: "",
     spouseLabel: "",
     spousePasswords: {},
+    // Who holds each card/account: { [bank]: { me: bool, spouse: bool } }.
+    // Absent entries fall back to the SOURCES flags (see sourceOwners), so
+    // this stays empty until you actually change an owner.
+    owners: {},
     // Fixed monthly expenses not paid by card (rent, house help, cook, …).
     // Each: { id, description, amount, currency, category, paidVia,
     //         dayOfMonth, startMonth "YYYY-MM", endMonth?, active }

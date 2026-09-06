@@ -76,35 +76,46 @@ function catOptionsHtml(selected) {
   return opts + `<option value="__new__">+ New category…</option>`;
 }
 
-// One unified password table: each card/account is a row, with a column for
-// your password and one for the household member's. A dash marks a cell that
-// doesn't apply (their-only card in your column, or an account in theirs). The
-// "theirs" column and their-only rows hide when Household mode is off (CSS).
-function pwTable() {
-  const on = settings.spouseEnabled;
+// Who holds a card. Defaults come from the SOURCES flags so nothing changes
+// for anyone who never touches the toggles: `shared` means both people have
+// one, `spouseOnly` means only the household member does.
+function sourceOwners(src) {
+  const saved = (settings.owners || {})[src.bank];
+  if (saved) return { me: !!saved.me, spouse: !!saved.spouse };
+  return { me: !src.spouseOnly, spouse: !!(src.shared || src.spouseOnly) };
+}
+
+// One block per card: name, the full password hint (it used to be the input's
+// placeholder, where all but the first few words were clipped), then a row per
+// person — a tick for whether they hold that card and the password box for it.
+// Every card offers both people a box; the tick is what says who actually has
+// one, rather than the old hard-coded dashes. The household row hides via CSS
+// when Household mode is off.
+function pwList() {
   const spName = settings.spouseName || "Their";
-  const mineCell = (s) => s.spouseOnly
-    ? `<span class="pw-na">—</span>`
-    : `<input type="password" class="pwIn" data-bank="${s.bank}" value="${esc(settings.passwords[s.bank] || "")}" placeholder="${esc(s.passwordHint || "PDF password")}">`;
-  const hersCell = (s) => (s.shared || s.spouseOnly)
-    ? `<input type="password" class="spPw" data-bank="${s.bank}" value="${esc((settings.spousePasswords || {})[s.bank] || "")}" placeholder="${esc(s.passwordHint || "PDF password")}">`
-    : `<span class="pw-na">—</span>`;
-  const row = (s) => `<tr class="${s.spouseOnly ? "sponly-row" : ""}">
-    <td>${esc(s.label)}</td>
-    <td>${mineCell(s)}</td>
-    <td class="spcol">${hersCell(s)}</td>
-  </tr>`;
+  const ownerRow = (s, who, label) => {
+    const own = sourceOwners(s)[who];
+    const cls = who === "me" ? "pwIn" : "spPw";
+    const val = who === "me" ? settings.passwords[s.bank] : (settings.spousePasswords || {})[s.bank];
+    return `<div class="pw-own-row${who === "spouse" ? " spcol" : ""}${own ? "" : " off"}">
+      <label class="pw-own"><input type="checkbox" class="ownCk" data-who="${who}" data-bank="${s.bank}" ${own ? "checked" : ""}><span>${esc(label)}</span></label>
+      <input type="password" class="${cls}" data-bank="${s.bank}" value="${esc(val || "")}" placeholder="PDF password" ${own ? "" : "disabled"}>
+    </div>`;
+  };
+  const item = (s) => `<div class="pw-item">
+    <div class="pw-name">${esc(s.label)}</div>
+    ${s.passwordHint ? `<div class="pw-hint">${esc(s.passwordHint)}</div>` : ""}
+    ${ownerRow(s, "me", "Mine")}
+    ${ownerRow(s, "spouse", `${spName}'s`)}
+  </div>`;
   const cc = SOURCES.filter((s) => s.kind === "statement" && !s.acct);
   const acct = SOURCES.filter((s) => s.kind === "statement" && s.acct);
-  return `<table class="pw-table ${on ? "" : "hide-spouse"}">
-    <thead><tr><th>Card / account</th><th>Your password</th><th class="spcol">${esc(spName)}'s password</th></tr></thead>
-    <tbody>
-      <tr class="grouprow"><td colspan="3">Credit cards</td></tr>
-      ${cc.map(row).join("")}
-      <tr class="grouprow"><td colspan="3">Bank-account statements</td></tr>
-      ${acct.map(row).join("")}
-    </tbody>
-  </table>`;
+  return `<div class="pw-list ${settings.spouseEnabled ? "" : "hide-spouse"}">
+    <div class="pw-group">Credit cards</div>
+    ${cc.map(item).join("")}
+    <div class="pw-group">Bank-account statements</div>
+    ${acct.map(item).join("")}
+  </div>`;
 }
 
 function spendBase(e) {
@@ -1268,10 +1279,11 @@ async function fetchAndParse(range = { mode: "new" }) {
     for (const src of chosen) {
       try {
         const specs = [];
+        const own = sourceOwners(src);
         if (spLabel) {
-          if (!src.spouseOnly) specs.push({ labelQuery: `-label:"${spLabel}"`, cardLabel: src.label, password: settings.passwords[src.bank] || "", owner: "me" });
-          if (src.shared || src.spouseOnly) specs.push({ labelQuery: `label:"${spLabel}"`, cardLabel: `${src.label} (${spName})`, password: (settings.spousePasswords || {})[src.bank] || "", owner: "spouse" });
-        } else if (!src.spouseOnly) {
+          if (own.me) specs.push({ labelQuery: `-label:"${spLabel}"`, cardLabel: src.label, password: settings.passwords[src.bank] || "", owner: "me" });
+          if (own.spouse) specs.push({ labelQuery: `label:"${spLabel}"`, cardLabel: `${src.label} (${spName})`, password: (settings.spousePasswords || {})[src.bank] || "", owner: "spouse" });
+        } else if (own.me) {
           specs.push({ labelQuery: "", cardLabel: src.label, password: settings.passwords[src.bank] || "", owner: "me" });
         }
         const mode = sourceMode(src);
@@ -1608,7 +1620,7 @@ async function saveReview() {
 function renderSettings() {
   const curList = Object.keys(settings.rates);
   views.innerHTML = `
-    <div class="grid cols-2">
+    <div class="grid cols-2 top">
       <div class="card">
         <div class="section-title">Base currency & FX rates</div>
         <div class="field" style="max-width:220px"><label>Base currency</label><select id="setBase">${currencyOptions(settings.baseCurrency)}</select></div>
@@ -1616,43 +1628,6 @@ function renderSettings() {
         <div id="rateRows" class="mt">${curList.map(rateRowHtml).join("")}</div>
         <div class="flex mt"><input id="newCur" placeholder="Add code e.g. SAR" style="max-width:140px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2)"><button class="btn sm secondary" id="addCur">Add currency</button></div>
       </div>
-      <div class="card">
-        <div class="section-title">Gmail connection</div>
-        <div class="field"><label>Google OAuth Client ID</label><input id="setClient" value="${esc(settings.googleClientId)}" placeholder="xxxxx.apps.googleusercontent.com"></div>
-        <p class="hint">Needed to read statements from Gmail on a static site. Create a free <b>Web</b> OAuth Client ID in Google Cloud, enable the Gmail API, and add this site's URL as an authorized JavaScript origin. Full walkthrough in the README.</p>
-        <div class="section-title mt">Statement PDF passwords</div>
-        <p class="hint">Bank statement PDFs are encrypted. Passwords sync across your devices through your private Google Drive app folder (readable only by this app).${settings.spouseEnabled ? " A dash means that card isn't that person's." : ""} Leave a box blank to keep the password already saved for it — saving never clears one.</p>
-        ${pwTable()}
-      </div>
-    </div>
-
-    <div class="card mt">
-      <div class="section-title">Sync across devices (Google Drive)</div>
-      <p class="hint">Syncs your data through a private folder in your own Google Drive that only this app can read — expenses, categories, household settings and PDF passwords appear on every device. Only the Google Client ID stays per-device (you enter it once when connecting).</p>
-      <div class="flex">
-        ${GM.isSignedIn()
-          ? `<span class="okbox" style="padding:6px 10px">Google account connected</span><button class="btn" id="syncNow">Sync now</button>`
-          : `<button class="btn" id="syncConnect" ${settings.googleClientId ? "" : "disabled"}>Connect Google account</button>`}
-        <label class="flex" style="gap:6px;cursor:pointer"><input type="checkbox" id="autoSync" ${settings.autoSync ? "checked" : ""}> Auto-sync on changes</label>
-      </div>
-      <div class="hint mt" id="syncStatus"></div>
-      ${!settings.googleClientId ? `<div class="hint mt">Add your Google Client ID above and press <b>Save settings</b> to enable syncing.</div>` : ""}
-    </div>
-
-    <div class="card mt">
-      <div class="section-title">Household — a second person's cards</div>
-      <p class="hint">If a family member's statements are forwarded into this Gmail with a label (yours aren't), import theirs too — tagged with their name so you can filter by person, all in one household total.</p>
-      <label class="flex" style="gap:8px;cursor:pointer;font-weight:600;color:var(--text)"><input type="checkbox" id="spEnabled" ${settings.spouseEnabled ? "checked" : ""}> Also import a second person's cards</label>
-      <div id="spOpts" class="mt" style="${settings.spouseEnabled ? "" : "display:none"}">
-        <div class="row">
-          <div class="field"><label>Their name (tag)</label><input id="spName" value="${esc(settings.spouseName)}" placeholder="e.g. Harshita"></div>
-          <div class="field"><label>Gmail label on their forwarded statements</label><input id="spLabel" value="${esc(settings.spouseLabel)}" placeholder="e.g. Harshi Forward"></div>
-        </div>
-        <p class="hint">Their PDF passwords appear as a second column in the <b>Statement PDF passwords</b> table above once this is on.</p>
-      </div>
-    </div>
-
-    <div class="grid cols-2 mt">
       <div class="card">
         <div class="section-title">Categories</div>
         <div id="catList" class="flex">${sortedCats().map((c) => `<span class="chip cat">${esc(c)} <button class="icon-btn catDel" data-c="${esc(c)}" style="padding:0 4px">✕</button></span>`).join("")}</div>
@@ -1672,23 +1647,59 @@ function renderSettings() {
         <div class="flex mt"><button class="btn sm secondary" id="reFees">Re-file saved forex fees now</button>
           <span class="hint">Applies the above to transactions you've already imported.</span></div>
       </div>
+    </div>
+
+    <div class="grid cols-2 top mt">
       <div class="card">
-        <div class="section-title">Data</div>
-        <p class="hint">Everything is stored locally in this browser (IndexedDB). Back it up or move it between devices here.</p>
-        <div class="flex">
-          <button class="btn secondary" id="expJson">Export JSON backup</button>
-          <label class="btn secondary" style="display:inline-block">Import JSON<input type="file" id="impJson" accept="application/json" hidden></label>
-          <button class="btn danger" id="wipe">Delete all data</button>
+        <div class="section-title">People</div>
+        <p class="hint">If a family member's statements are forwarded into this Gmail with a label (yours aren't), import theirs too — tagged with their name so you can filter by person, all in one household total.</p>
+        <label class="flex" style="gap:8px;cursor:pointer;font-weight:600;color:var(--text)"><input type="checkbox" id="spEnabled" ${settings.spouseEnabled ? "checked" : ""}> Also import a second person's cards</label>
+        <div id="spOpts" class="mt" style="${settings.spouseEnabled ? "" : "display:none"}">
+          <div class="row">
+            <div class="field"><label>Their name (tag)</label><input id="spName" value="${esc(settings.spouseName)}" placeholder="e.g. Harshita"></div>
+            <div class="field"><label>Gmail label on their statements</label><input id="spLabel" value="${esc(settings.spouseLabel)}" placeholder="e.g. Harshi Forward"></div>
+          </div>
+          <p class="hint">Each card below then offers them a password box too — tick the ones they actually hold.</p>
         </div>
-        <div class="hint mt">${expenses.length} transactions stored.</div>
-        <div class="section-title mt" style="border-top:1px solid var(--border);padding-top:14px">Rename a card</div>
-        <p class="hint">Relabel every transaction on one card (e.g. "Axis Credit Card" → "Axis Magnus Credit Card").</p>
-        <div class="row">
-          <div class="field"><label>From</label><select id="cardFrom"><option value="">Pick a card…</option>${[...new Set(expenses.map((e) => e.card).filter(Boolean))].sort().map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
-          <div class="field"><label>To</label><input id="cardTo" placeholder="New card name"></div>
-        </div>
-        <div class="flex mt"><button class="btn sm secondary" id="cardRename">Rename card</button></div>
       </div>
+      <div class="card">
+        <div class="section-title">Google account</div>
+        <p class="hint">One connection covers both jobs: reading statements out of Gmail, and syncing across your devices through a private Google Drive folder only this app can read.</p>
+        <div class="field"><label>Google OAuth Client ID</label><input id="setClient" value="${esc(settings.googleClientId)}" placeholder="xxxxx.apps.googleusercontent.com"></div>
+        <p class="hint">Create a free <b>Web</b> OAuth Client ID in Google Cloud, enable the Gmail API, and add this site's URL as an authorized JavaScript origin. Full walkthrough in the README. It stays on this device — it's the one setting that never syncs.</p>
+        <div class="flex mt">
+          ${GM.isSignedIn()
+            ? `<span class="okbox" style="padding:6px 10px">Connected</span><button class="btn" id="syncNow">Sync now</button>`
+            : `<button class="btn" id="syncConnect" ${settings.googleClientId ? "" : "disabled"}>Connect Google account</button>`}
+          <label class="flex" style="gap:6px;cursor:pointer"><input type="checkbox" id="autoSync" ${settings.autoSync ? "checked" : ""}> Auto-sync on changes</label>
+        </div>
+        <div class="hint mt" id="syncStatus"></div>
+        ${!settings.googleClientId ? `<div class="hint mt">Paste your Client ID above and press <b>Save settings</b> at the bottom to enable connecting.</div>` : ""}
+      </div>
+    </div>
+
+    <div class="card mt">
+      <div class="section-title">Statement PDF passwords</div>
+      <p class="hint">Bank statement PDFs are encrypted. Tick who holds each card, and give the password for it. Leave a box blank to keep the password already saved — saving never clears one. These sync across your devices through your private Google Drive app folder.</p>
+      ${pwList()}
+    </div>
+
+    <div class="card mt">
+      <div class="section-title">Data</div>
+      <p class="hint">Everything is stored locally in this browser (IndexedDB). Back it up or move it between devices here.</p>
+      <div class="flex">
+        <button class="btn secondary" id="expJson">Export JSON backup</button>
+        <label class="btn secondary" style="display:inline-block">Import JSON<input type="file" id="impJson" accept="application/json" hidden></label>
+        <button class="btn danger" id="wipe">Delete all data</button>
+      </div>
+      <div class="hint mt">${expenses.length} transactions stored. A backup includes your settings and PDF passwords, so keep the file somewhere safe.</div>
+      <div class="section-title mt" style="border-top:1px solid var(--border);padding-top:14px">Rename a card</div>
+      <p class="hint">Relabel every transaction on one card (e.g. "Axis Credit Card" → "Axis Magnus Credit Card").</p>
+      <div class="row">
+        <div class="field"><label>From</label><select id="cardFrom"><option value="">Pick a card…</option>${[...new Set(expenses.map((e) => e.card).filter(Boolean))].sort().map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+        <div class="field"><label>To</label><input id="cardTo" placeholder="New card name"></div>
+      </div>
+      <div class="flex mt"><button class="btn sm secondary" id="cardRename">Rename card</button></div>
     </div>
     <div class="flex mt"><button class="btn" id="saveSet">Save settings</button><span id="setMsg" class="hint"></span></div>`;
 
@@ -1760,7 +1771,21 @@ function renderSettings() {
   $("#spEnabled")?.addEventListener("change", (e) => {
     const on = e.target.checked;
     const el = $("#spOpts"); if (el) el.style.display = on ? "" : "none";
-    const tbl = $(".pw-table"); if (tbl) tbl.classList.toggle("hide-spouse", !on);
+    const list = $(".pw-list"); if (list) list.classList.toggle("hide-spouse", !on);
+  });
+  // A card nobody holds has no password to give, so grey its box out. The
+  // stored value is left alone — unticking is not a way to lose a password.
+  $$(".ownCk").forEach((ck) => ck.addEventListener("change", () => {
+    const row = ck.closest(".pw-own-row");
+    const input = row?.querySelector("input[type=password]");
+    if (input) input.disabled = !ck.checked;
+    row?.classList.toggle("off", !ck.checked);
+  }));
+  // Retitle the household boxes as you type their name, so the label matches
+  // before you've saved.
+  $("#spName")?.addEventListener("input", (e) => {
+    const n = e.target.value.trim() || "Their";
+    $$(".pw-own-row.spcol .pw-own span").forEach((s) => { s.textContent = `${n}'s`; });
   });
   $("#saveSet").addEventListener("click", async () => {
     settings.googleClientId = $("#setClient").value.trim();
@@ -1794,6 +1819,12 @@ function renderSettings() {
     settings.spouseLabel = $("#spLabel")?.value.trim() || "";
     settings.spousePasswords = settings.spousePasswords || {};
     $$(".spPw").forEach((el) => { if (el.value) settings.spousePasswords[el.dataset.bank] = el.value; });
+    settings.owners = settings.owners || {};
+    $$(".ownCk").forEach((el) => {
+      const o = settings.owners[el.dataset.bank] || {};
+      o[el.dataset.who] = el.checked;
+      settings.owners[el.dataset.bank] = o;
+    });
     settings.attributeFees = $("#attrFees")?.checked !== false;
     saveSettings(settings);
     await markPrefsChanged(); // base currency / rates / categories are synced prefs
