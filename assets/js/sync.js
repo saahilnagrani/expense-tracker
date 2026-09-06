@@ -4,14 +4,18 @@
 //   - Deletions are tracked as tombstones { id: deletedAt }. A tombstone wins
 //     over a record only if it's newer than that record's updatedAt, so an
 //     edit on device B after a delete on device A is preserved.
-//   - Prefs (base currency, FX rates, categories, recurring, and the
-//     non-secret household name/label/toggle) sync as one blob with its own
-//     last-write-wins timestamp. PDF passwords and the Google Client ID stay
-//     local to each device and are never uploaded.
+//   - Prefs (base currency, FX rates, categories, recurring, the non-secret
+//     household name/label/toggle, and the PDF passwords) sync as one blob
+//     with its own last-write-wins timestamp. The Google Client ID stays local
+//     to each device and is never uploaded.
+//   - Password maps are unioned rather than replaced, and what gets pushed
+//     back up is the merged result, not whichever raw blob won the timestamp
+//     comparison. See buildOutPrefs below.
 
 import {
   allExpenses, putMany, clearAll, getTombstones, setTombstones,
   loadSettings, saveSettings, getMeta, setMeta,
+  loadPrefsUpdatedAt, savePrefsUpdatedAt,
 } from "./db.js";
 import * as Drive from "./drive.js";
 
@@ -57,7 +61,9 @@ export async function syncNow() {
   const mergedRecurring = [...recMap.values()];
 
   // --- prefs last-write-wins ---
-  const localPrefsAt = await getMeta("prefsUpdatedAt", 0);
+  // Take the max so the value written by older builds (IndexedDB meta) isn't
+  // lost the first time this runs after the move to localStorage.
+  const localPrefsAt = Math.max(loadPrefsUpdatedAt(), await getMeta("prefsUpdatedAt", 0));
   const localPrefs = {
     baseCurrency: settings.baseCurrency, rates: settings.rates, categories: settings.categories,
     recurring: settings.recurring || [],
@@ -80,6 +86,7 @@ export async function syncNow() {
   await clearAll();
   await putMany(merged);
   await setTombstones(deleted);
+  let outPrefs = prefs ? { ...prefs, recurring: mergedRecurring } : null;
   if (prefs) {
     const s = loadSettings();
     s.baseCurrency = prefs.baseCurrency || s.baseCurrency;
@@ -95,12 +102,24 @@ export async function syncNow() {
     if (prefs.passwords) s.passwords = { ...s.passwords, ...prefs.passwords };
     if (prefs.spousePasswords) s.spousePasswords = { ...(s.spousePasswords || {}), ...prefs.spousePasswords };
     saveSettings(s);
+
+    // Push what we actually ended up with, NOT the raw blob that won the
+    // timestamp comparison. The merge above unions both sides — passwords
+    // especially — so uploading the winner instead drops every value that
+    // existed on only one device, and keeps dropping it on every later sync:
+    // the losing device's passwords could never reach Drive at all.
+    outPrefs = buildOutPrefs(s, mergedRecurring);
+    // The merge produced something neither side had, so it is genuinely newer.
+    // Without this the enriched blob carries the old timestamp and other
+    // devices, already at or past it, never pull the values back down.
+    if (normPrefs(outPrefs) !== normPrefs(prefs)) prefsUpdatedAt = Date.now();
   }
-  await setMeta("prefsUpdatedAt", prefsUpdatedAt);
+  savePrefsUpdatedAt(prefsUpdatedAt);
+  await setMeta("prefsUpdatedAt", prefsUpdatedAt); // keep older builds in step
 
   // --- push merged result up to Drive (with the unioned recurring list) ---
   const payload = { version: 1, updatedAt: Date.now(), expenses: merged, deleted,
-    prefs: { ...prefs, recurring: mergedRecurring }, prefsUpdatedAt };
+    prefs: outPrefs, prefsUpdatedAt };
   await Drive.writeFile(payload, file && file.id);
 
   const at = Date.now();
@@ -108,9 +127,34 @@ export async function syncNow() {
   return { count: merged.length, at };
 }
 
+// The synced slice of settings, in a fixed key order.
+function buildOutPrefs(s, recurring) {
+  return {
+    baseCurrency: s.baseCurrency, rates: s.rates, categories: s.categories, recurring,
+    spouseEnabled: s.spouseEnabled, spouseName: s.spouseName, spouseLabel: s.spouseLabel,
+    attributeFees: s.attributeFees,
+    passwords: s.passwords || {}, spousePasswords: s.spousePasswords || {},
+  };
+}
+
+// Compare two prefs blobs by value. Map key order differs between a merged
+// object and the blob it came from, so sort those; `recurring` is skipped
+// because both sides are handed the same merged list.
+function normPrefs(p) {
+  const sorted = (o) => Object.fromEntries(Object.entries(o || {}).sort((a, b) => (a[0] < b[0] ? -1 : 1)));
+  return JSON.stringify({
+    baseCurrency: p.baseCurrency ?? null, rates: sorted(p.rates), categories: p.categories ?? [],
+    spouseEnabled: p.spouseEnabled ?? null, spouseName: p.spouseName ?? null,
+    spouseLabel: p.spouseLabel ?? null, attributeFees: p.attributeFees ?? null,
+    passwords: sorted(p.passwords), spousePasswords: sorted(p.spousePasswords),
+  });
+}
+
 // Call this whenever local prefs change so the next sync uploads them.
 export async function markPrefsChanged() {
-  await setMeta("prefsUpdatedAt", Date.now());
+  const at = Date.now();
+  savePrefsUpdatedAt(at);
+  await setMeta("prefsUpdatedAt", at);
 }
 
 export async function lastSyncedAt() {
