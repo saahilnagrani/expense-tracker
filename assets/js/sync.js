@@ -98,9 +98,11 @@ export async function syncNow() {
     if (prefs.spouseLabel !== undefined) s.spouseLabel = prefs.spouseLabel;
     if (prefs.attributeFees !== undefined) s.attributeFees = prefs.attributeFees;
     // Union password maps so a password entered on either device survives; the
-    // newer prefs blob wins for any bank present on both.
-    if (prefs.passwords) s.passwords = { ...s.passwords, ...prefs.passwords };
-    if (prefs.spousePasswords) s.spousePasswords = { ...(s.spousePasswords || {}), ...prefs.spousePasswords };
+    // newer prefs blob wins for any bank present on both. Blank entries are
+    // dropped first: a device that once saved empty boxes would otherwise
+    // propagate those blanks and wipe the real passwords everywhere else.
+    if (prefs.passwords) s.passwords = { ...s.passwords, ...nonEmpty(prefs.passwords) };
+    if (prefs.spousePasswords) s.spousePasswords = { ...(s.spousePasswords || {}), ...nonEmpty(prefs.spousePasswords) };
     saveSettings(s);
 
     // Push what we actually ended up with, NOT the raw blob that won the
@@ -127,13 +129,20 @@ export async function syncNow() {
   return { count: merged.length, at };
 }
 
+// Drop blank entries from a password map. A stored "" carries no information
+// and is indistinguishable from "never set", but unioning it over a real
+// password destroys one — so blanks are never stored, uploaded, or applied.
+function nonEmpty(map) {
+  return Object.fromEntries(Object.entries(map || {}).filter(([, v]) => v));
+}
+
 // The synced slice of settings, in a fixed key order.
 function buildOutPrefs(s, recurring) {
   return {
     baseCurrency: s.baseCurrency, rates: s.rates, categories: s.categories, recurring,
     spouseEnabled: s.spouseEnabled, spouseName: s.spouseName, spouseLabel: s.spouseLabel,
     attributeFees: s.attributeFees,
-    passwords: s.passwords || {}, spousePasswords: s.spousePasswords || {},
+    passwords: nonEmpty(s.passwords), spousePasswords: nonEmpty(s.spousePasswords),
   };
 }
 

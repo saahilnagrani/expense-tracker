@@ -1621,7 +1621,7 @@ function renderSettings() {
         <div class="field"><label>Google OAuth Client ID</label><input id="setClient" value="${esc(settings.googleClientId)}" placeholder="xxxxx.apps.googleusercontent.com"></div>
         <p class="hint">Needed to read statements from Gmail on a static site. Create a free <b>Web</b> OAuth Client ID in Google Cloud, enable the Gmail API, and add this site's URL as an authorized JavaScript origin. Full walkthrough in the README.</p>
         <div class="section-title mt">Statement PDF passwords</div>
-        <p class="hint">Bank statement PDFs are encrypted. Passwords sync across your devices through your private Google Drive app folder (readable only by this app).${settings.spouseEnabled ? " A dash means that card isn't that person's." : ""}</p>
+        <p class="hint">Bank statement PDFs are encrypted. Passwords sync across your devices through your private Google Drive app folder (readable only by this app).${settings.spouseEnabled ? " A dash means that card isn't that person's." : ""} Leave a box blank to keep the password already saved for it — saving never clears one.</p>
         ${pwTable()}
       </div>
     </div>
@@ -1782,12 +1782,18 @@ function renderSettings() {
       }
     }
     settings.baseCurrency = newBase;
-    $$(".pwIn").forEach((el) => { settings.passwords[el.dataset.bank] = el.value; });
+    // A blank box means "leave the saved password alone", never "erase it".
+    // Writing el.value unconditionally meant one Save with an empty field wiped
+    // the stored password — and markPrefsChanged then pushed the blanks to
+    // Drive, where the union overwrote the good values on every other device.
+    // Clearing one is done by typing over it; there is no way to blank a field
+    // by accident and lose a password you can't recover.
+    $$(".pwIn").forEach((el) => { if (el.value) settings.passwords[el.dataset.bank] = el.value; });
     settings.spouseEnabled = $("#spEnabled")?.checked || false;
     settings.spouseName = $("#spName")?.value.trim() || "";
     settings.spouseLabel = $("#spLabel")?.value.trim() || "";
     settings.spousePasswords = settings.spousePasswords || {};
-    $$(".spPw").forEach((el) => { settings.spousePasswords[el.dataset.bank] = el.value; });
+    $$(".spPw").forEach((el) => { if (el.value) settings.spousePasswords[el.dataset.bank] = el.value; });
     settings.attributeFees = $("#attrFees")?.checked !== false;
     saveSettings(settings);
     await markPrefsChanged(); // base currency / rates / categories are synced prefs
