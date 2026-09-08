@@ -1336,7 +1336,7 @@ function renderImport() {
   $("#fetchBtn")?.addEventListener("click", fetchAndParse);
 }
 
-function setLog(html) { const el = $("#importLog"); if (el) el.innerHTML = html; }
+function setLog(html) { const el = $("#importLog") || $("#duesLog"); if (el) el.innerHTML = html; }
 
 // Keep the phone screen awake during an import so locking it doesn't suspend
 // the tab (and its in-flight requests). The lock is auto-released when the tab
@@ -1356,11 +1356,17 @@ document.addEventListener("visibilitychange", async () => {
   }
 });
 
+// `range` is also the click Event when wired straight to a button, so every
+// field read off it has to tolerate being absent.
 async function fetchAndParse(range = { mode: "new" }) {
   const chosen = SOURCES.filter((s) => isEnabled(s, "me") || isEnabled(s, "spouse"));
   if (!chosen.length) return toast("Pick at least one source", "err");
+  // Dues-only: read the statement headers and stop. Statements are saved as
+  // each PDF is parsed, independently of the review, so this needs to skip the
+  // review rather than do anything different to get the dues.
+  const duesOnly = range && range.duesOnly === true;
   const after = new Date();
-  after.setMonth(after.getMonth() - settings.lookbackMonths);
+  after.setMonth(after.getMonth() - ((range && range.months) || settings.lookbackMonths));
   const afterStr = `${after.getFullYear()}/${after.getMonth() + 1}/${after.getDate()}`;
 
   // Gmail accepts a Unix timestamp in after:/before:, so a month is an exact
@@ -1382,14 +1388,19 @@ async function fetchAndParse(range = { mode: "new" }) {
 
   const existing = await existingDedupeKeys();
   const debug = $("#impDebug")?.checked;
-  reviewReplace = !!$("#impReplace")?.checked;
+  // Replace is a transaction operation and the checkbox lives on Import, so a
+  // dues refresh must never inherit it — it would delete rows this run has no
+  // intention of replacing.
+  reviewReplace = duesOnly ? false : !!$("#impReplace")?.checked;
   const debugRaw = [];
   const parsed = [];
   const problems = [];
   // Counted so an empty result can explain itself: no emails found is a very
   // different outcome from emails found but nothing readable.
   const stats = { emails: 0, pdfs: 0 };
-  $("#reviewArea").innerHTML = "";
+  // Only exists on the Import tab, and a dues refresh has no review to clear.
+  const revArea = $("#reviewArea");
+  if (revArea && !duesOnly) revArea.innerHTML = "";
 
   const spLabel = settings.spouseEnabled && settings.spouseLabel ? settings.spouseLabel : "";
   const spName = settings.spouseName || "Spouse";
@@ -1540,6 +1551,17 @@ async function fetchAndParse(range = { mode: "new" }) {
   }
 
   setLog("");
+  if (duesOnly) {
+    // Deliberately leaves `parsed` on the floor: nothing is offered for review,
+    // so no transaction can be created, changed or deleted by this path. Any
+    // pending review sitting on the Import tab is left untouched too.
+    renderDues();
+    const box = $("#duesLog");
+    if (box) box.innerHTML = problems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("");
+    const n = foundStatements.length;
+    toast(n ? `${n} statement${n > 1 ? "s" : ""} read` : "No statements found in that window", n ? "ok" : "err");
+    return;
+  }
   renderReview(parsed, problems, stats);
   if (debug && debugRaw.length) {
     const block = debugRaw.map((d) =>
@@ -2022,6 +2044,13 @@ function renderDues() {
         </div>` : ""}
       </div>
       <p class="hint mt">As each card's most recent statement — not a live balance. Spend and payments since then aren't counted.</p>
+      ${GM.isSignedIn() ? `<div class="dues-refresh mt">
+        <label for="duesBack">Read statements from the last</label>
+        <select id="duesBack" class="fsel">${[3, 6, 12, 24].map((m) => `<option value="${m}" ${settings.duesLookbackMonths === m ? "selected" : ""}>${m} months</option>`).join("")}</select>
+        <button class="btn sm secondary" id="duesFetch">Refresh dues</button>
+        <span class="hint only-wide">Reads the statements only — your transactions aren't touched.</span>
+      </div>
+      <div id="duesLog"></div>` : ""}
       <div class="cc-list mt">${cards.map(cardHtml).join("")}</div>
     </div>`;
 
@@ -2030,6 +2059,24 @@ function renderDues() {
     saveSettings(settings);
     renderDues();
   }));
+  $("#duesBack")?.addEventListener("change", (e) => {
+    settings.duesLookbackMonths = +e.target.value;
+    saveSettings(settings);
+  });
+  $("#duesFetch")?.addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = "Reading…";
+    // renderDues() repaints on completion, so the button is replaced rather
+    // than restored — only a thrown error leaves this one on screen.
+    try {
+      await fetchAndParse({ mode: "new", duesOnly: true, months: settings.duesLookbackMonths });
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "Refresh dues";
+      toast(`Couldn't read statements — ${err.message}`, "err");
+    }
+  });
 }
 
 // ---------- Settings ----------

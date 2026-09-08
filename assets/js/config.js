@@ -258,6 +258,10 @@ export function defaultSettings() {
     // Device-local — it is a way of looking at the list, not data about it,
     // so it is deliberately left out of the synced prefs blob.
     duesSort: "due",
+    // How far back "Refresh dues" reads statements. Separate from the Import
+    // look-back: refreshing what is owed usually needs the last statement or
+    // two, while a transaction import is a much bigger, rarer job.
+    duesLookbackMonths: 3,
     // Fixed monthly expenses not paid by card (rent, house help, cook, …).
     // Each: { id, description, amount, currency, category, paidVia,
     //         dayOfMonth, startMonth "YYYY-MM", endMonth?, active }
