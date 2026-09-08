@@ -60,13 +60,21 @@ export async function syncNow() {
   }
   const mergedRecurring = [...recMap.values()];
 
+  // Trips union by id too. There are only ever a handful, but naming one on
+  // your phone and another on the laptop must not lose either.
+  const tripMap = new Map();
+  for (const t of [...((remote.prefs && remote.prefs.trips) || []), ...(settings.trips || [])]) {
+    if (t && t.id) tripMap.set(t.id, t);
+  }
+  const mergedTrips = [...tripMap.values()];
+
   // --- prefs last-write-wins ---
   // Take the max so the value written by older builds (IndexedDB meta) isn't
   // lost the first time this runs after the move to localStorage.
   const localPrefsAt = Math.max(loadPrefsUpdatedAt(), await getMeta("prefsUpdatedAt", 0));
   const localPrefs = {
     baseCurrency: settings.baseCurrency, rates: settings.rates, categories: settings.categories,
-    recurring: settings.recurring || [],
+    recurring: settings.recurring || [], trips: settings.trips || [],
     // Household settings are not secret (a name tag + a Gmail label), so sync
     // them too. The Client ID stays device-local (you need it to connect before
     // any sync can run, so syncing it adds nothing).
@@ -86,13 +94,14 @@ export async function syncNow() {
   await clearAll();
   await putMany(merged);
   await setTombstones(deleted);
-  let outPrefs = prefs ? { ...prefs, recurring: mergedRecurring } : null;
+  let outPrefs = prefs ? { ...prefs, recurring: mergedRecurring, trips: mergedTrips } : null;
   if (prefs) {
     const s = loadSettings();
     s.baseCurrency = prefs.baseCurrency || s.baseCurrency;
     s.rates = { ...s.rates, ...(prefs.rates || {}) };
     s.categories = prefs.categories && prefs.categories.length ? prefs.categories : s.categories;
     s.recurring = mergedRecurring; // union by id, not last-write-wins
+    s.trips = mergedTrips;
     if (prefs.spouseEnabled !== undefined) s.spouseEnabled = prefs.spouseEnabled;
     if (prefs.spouseName !== undefined) s.spouseName = prefs.spouseName;
     if (prefs.spouseLabel !== undefined) s.spouseLabel = prefs.spouseLabel;
@@ -110,7 +119,7 @@ export async function syncNow() {
     // especially — so uploading the winner instead drops every value that
     // existed on only one device, and keeps dropping it on every later sync:
     // the losing device's passwords could never reach Drive at all.
-    outPrefs = buildOutPrefs(s, mergedRecurring);
+    outPrefs = buildOutPrefs(s, mergedRecurring, mergedTrips);
     // The merge produced something neither side had, so it is genuinely newer.
     // Without this the enriched blob carries the old timestamp and other
     // devices, already at or past it, never pull the values back down.
@@ -137,9 +146,9 @@ function nonEmpty(map) {
 }
 
 // The synced slice of settings, in a fixed key order.
-function buildOutPrefs(s, recurring) {
+function buildOutPrefs(s, recurring, trips) {
   return {
-    baseCurrency: s.baseCurrency, rates: s.rates, categories: s.categories, recurring,
+    baseCurrency: s.baseCurrency, rates: s.rates, categories: s.categories, recurring, trips,
     spouseEnabled: s.spouseEnabled, spouseName: s.spouseName, spouseLabel: s.spouseLabel,
     attributeFees: s.attributeFees,
     passwords: nonEmpty(s.passwords), spousePasswords: nonEmpty(s.spousePasswords),
@@ -153,6 +162,7 @@ function normPrefs(p) {
   const sorted = (o) => Object.fromEntries(Object.entries(o || {}).sort((a, b) => (a[0] < b[0] ? -1 : 1)));
   return JSON.stringify({
     baseCurrency: p.baseCurrency ?? null, rates: sorted(p.rates), categories: p.categories ?? [],
+    trips: (p.trips ?? []).map((t) => `${t.id}|${t.name}|${t.from || ""}|${t.to || ""}`).sort(),
     spouseEnabled: p.spouseEnabled ?? null, spouseName: p.spouseName ?? null,
     spouseLabel: p.spouseLabel ?? null, attributeFees: p.attributeFees ?? null,
     passwords: sorted(p.passwords), spousePasswords: sorted(p.spousePasswords),
