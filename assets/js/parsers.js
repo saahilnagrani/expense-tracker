@@ -248,11 +248,12 @@ export function parseStatementLines(lines, opts = {}) {
     // Drop a second leading date (post date / txn date columns).
     mid = mid.replace(dateHead, "").trim();
     mid = mid.replace(/^[|\-–—:]+/, "").trim();
-    const desc = cleanMerchant(mid);
-    if (!desc || desc.length < 2) continue;
+    const descFull = cleanMerchant(mid);
+    if (!descFull || descFull.length < 2) continue;
+    const desc = tidyMerchant(descFull);
     // Hard-skip statement summary rows (balances, limits, dues) — these are
     // never real transactions even though they start with a date and amount.
-    if (SUMMARY_LINE.test(desc)) continue;
+    if (SUMMARY_LINE.test(descFull)) continue;
 
     const amount = parseFloat(mm[1].replace(/,/g, ""));
     if (!isFinite(amount) || amount === 0) continue;
@@ -262,10 +263,10 @@ export function parseStatementLines(lines, opts = {}) {
     const isCredit = opts.negIsExpense
       ? amount > 0
       : (/CR/i.test(mm[3] || "") || amount < 0 ||
-         /payment received|thank ?you|refund|reversal|cash\s?-?back|reward\s?redemption/i.test(desc));
+         /payment received|thank ?you|refund|reversal|cash\s?-?back|reward\s?redemption/i.test(descFull));
 
     // Lines that are more likely statement summaries than real transactions.
-    const looksNonTxn = /\b(balance|opening|closing|total|sub-?total|available|credit limit|minimum (amount )?due|amount due|payment due|previous|carried forward|brought forward|finance charge)\b/i.test(desc);
+    const looksNonTxn = /\b(balance|opening|closing|total|sub-?total|available|credit limit|minimum (amount )?due|amount due|payment due|previous|carried forward|brought forward|finance charge)\b/i.test(descFull);
 
     // A rough, honest confidence from concrete signals (not a fixed number).
     let confidence = 0.5;
@@ -284,6 +285,8 @@ export function parseStatementLines(lines, opts = {}) {
     out.push({
       date,
       description: desc,
+      // Only when the tidy differs, so most rows carry no extra field.
+      ...(descFull === desc ? {} : { rawDescription: descFull }),
       amount: Math.abs(amount),
       currency: currency,
       kind: isCredit ? "credit" : "expense",
@@ -352,6 +355,8 @@ function cleanWioRow(t) {
     .replace(/[+\-]\s*$/, "")       // trailing +/- left by the signed amount
     .trim();
   const out = { ...t, description, ref: refM ? refM[1] : null };
+  // Keep the rule-facing text in step with the display text.
+  if (t.rawDescription) out.rawDescription = t.rawDescription.replace(/^P\d{6,}\s*/i, "").replace(/[+\-]\s*$/, "").trim();
   if (WIO_CARD_PAYMENT.test(description)) out.category = "Card Payment";
   else if (/foreign exchange/i.test(description)) out.category = "Fees & Interest";
   return out;
@@ -382,11 +387,37 @@ export function cleanMerchant(s) {
     .replace(/\b(RAZ\*|PAYU\*|BILLDESK\*|CCAVENUE\*)/gi, "")
     .replace(/\s{2,}/g, " ")
     .replace(/[*#]+$/g, "")
-    .replace(/\s*\b\d{6,}\b\s*/g, " ") // long reference numbers
+    // Long reference numbers, plus a short group hyphenated onto one
+    // ("CASHBACK CREDIT-REF 162775-0108") — that tail is part of the same
+    // reference, not a date or an amount.
+    .replace(/\s*\b\d{6,}(?:-\d{2,6})?\b\s*/g, " ")
     .trim()
     .replace(/\b\w/g, (c) => c) // keep case
     .slice(0, 80)
     .trim();
+}
+
+// Indian card statements print each row as "<MERCHANT>,<CITY> <MERCHANT
+// CATEGORY>" — "MYNTRA DESIGNS PRIVATE L,BANGALORE CLOTH STORES". The tail is
+// the acquirer's classification, not part of the name, and it made the merchant
+// filter unreadable (every Amazon charge a distinct "merchant"). Strip it for
+// display; the full string is kept on the record as `rawDescription` because
+// several category rules read that classification text (Swiggy Instamart is
+// only distinguishable from Swiggy food by its "DEPT STORES" tail).
+//
+// Only the distinctive shape is touched: a comma with no space after it,
+// followed by two to five ALL-CAPS words. Anything else is left alone.
+const MCC_TAIL = /,(?=[A-Z])(?:[A-Z][A-Z&.'-]{2,}\s+){1,4}[A-Z][A-Z&.'-]{2,}\s*$/;
+// Payment-gateway and truncated-suffix noise left at the end of the name:
+// "AMAZON INDIA CYBS SI", "NETFLIX DI SI", "MYNTRA DESIGNS PRIVATE L".
+const GATEWAY_TAIL = /(?:\s+(?:CYBS|[A-Z]{1,2}))+$/;
+
+export function tidyMerchant(s) {
+  let out = String(s || "").replace(MCC_TAIL, "").trim();
+  // Never strip so much that nothing recognisable is left.
+  const stripped = out.replace(GATEWAY_TAIL, "").trim();
+  if (stripped.length >= 4) out = stripped;
+  return out || String(s || "").trim();
 }
 
 // A stable key used to avoid importing the same transaction twice across runs.
@@ -667,6 +698,54 @@ export function parseStatementSummary(bank, lines) {
     if (!out.card4) {
       const c = find(/^Card No:/i);
       if (c) out.card4 = (c.match(/\*+(\d{4})\b/) || [])[1];
+    }
+  }
+
+  if (bank.startsWith("cbd")) {
+    // CBD prints an English label and its Arabic twin on the same line with the
+    // value wedged between them ("Total Outstanding Balance 0.00 <arabic>"), but
+    // for the two headline figures the value drops to the line below, because a
+    // parenthetical qualifier follows the label:
+    //   Total Amount Due* * <arabic>
+    //   0.00
+    //   (to avoid Finance Charges) (<arabic>)
+    // labelled() reads whichever of the two shapes this statement used.
+    const ONLY_NUM = /^(\d[\d,]*\.\d{2})\s*(CR)?$/i;
+    const labelled = (re) => {
+      const i = findIdx(re);
+      if (i < 0) return undefined;
+      const same = numsIn(L[i]);
+      if (same.length) return { value: same[0], cr: /\bCR\b/i.test(L[i]) };
+      for (let j = i + 1; j < Math.min(L.length, i + 4); j++) {
+        const m = L[j].match(ONLY_NUM);
+        if (m) return { value: num(m[1]), cr: !!m[2] };
+      }
+      return undefined;
+    };
+    const card = find(/^Card Number\b/i);
+    if (card) out.card4 = (card.match(/\*+(\d{4})\b/) || [])[1];
+    const sd = find(/\bStatement Date\b/i);
+    if (sd) out.statementDate = datesIn(sd)[0];
+    const dd = find(/\bPayment Due Date\b.*\d/i);
+    if (dd) out.dueDate = datesIn(dd)[0];
+    // A CR balance means the card is in credit — nothing is owed, and the
+    // amount is theirs, not the bank's. Carry the sign rather than dropping it.
+    const total = labelled(/^Total Amount Due\b/i);
+    if (total) out.totalDue = total.cr ? -total.value : total.value;
+    const minimum = labelled(/^Minimum Amount Due\b/i);
+    if (minimum) out.minDue = minimum.cr ? -minimum.value : minimum.value;
+    const limit = labelled(/^Total Credit Limit\b/i);
+    if (limit) out.creditLimit = limit.value;
+    // Summary table: opening balance, payments in, new spend, closing balance.
+    // The header wraps onto a second line of qualifiers, so scan forward.
+    const si = findIdx(/^Opening Balance\b.*Total Outstanding Balance/i);
+    for (let i = si + 1; si >= 0 && i < Math.min(L.length, si + 4); i++) {
+      const n = numsIn(L[i]);
+      if (n.length < 4) continue;
+      // "198.16 CR 141.00 …" — the CR belongs to the opening balance.
+      out.previousBalance = /^\s*[\d,]+\.\d{2}\s+CR\b/i.test(L[i]) ? -n[0] : n[0];
+      out.closingBalance = n[3];
+      break;
     }
   }
 
