@@ -277,7 +277,14 @@ td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; }
   .panel-foot > .btn { flex: 1; }
 }
 
-/* ---- Cards: statement dues ---------------------------------------------- */
+/* ---- Dues: statement totals --------------------------------------------- */
+/* Total on the left, order picker on the right; they stack on a phone rather
+   than squeezing the segmented control against the amount. */
+.dues-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+/* Stacked, the segmented control should still hug its two labels — stretched
+   to the full width it reads as a toolbar rather than an either/or. */
+@media (max-width: 480px) { .dues-head { flex-direction: column; align-items: flex-start; } }
+
 .cc-total { font-size: 26px; font-weight: 800; letter-spacing: -.01em;
   font-variant-numeric: tabular-nums; }
 .cc-list { display: grid; grid-template-columns: 1fr; gap: 10px; }
