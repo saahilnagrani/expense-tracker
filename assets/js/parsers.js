@@ -603,6 +603,29 @@ export function parseStatementSummary(bank, lines) {
     }
   }
 
+  if (bank === "fab") {
+    // The header block is interleaved with Arabic glyphs that pdf.js renders as
+    // punctuation soup. The remittance slip at the foot of the page repeats
+    // everything in clean ASCII on one line, so read that instead:
+    //   "4937 50** **** 2885 1017075723 28-10-2024 22-11-2024 0.00 0.00"
+    const card = find(/\b\d{4}\s+\d{2}\*+\s+\*+\s+(\d{4})\b/);
+    if (card) out.card4 = (card.match(/\b\d{4}\s+\d{2}\*+\s+\*+\s+(\d{4})\b/) || [])[1];
+    const ri = findIdx(/Main Card Number.*Statement Date.*Total Payment Due/i);
+    const row = ri >= 0 ? L[ri + 1] : undefined;
+    if (row) {
+      const d = datesIn(row);
+      if (d.length >= 2) { out.statementDate = d[0]; out.dueDate = d[1]; }
+      // Everything after the last date is the two amounts. Reading the whole
+      // line instead would pick up the card digits and the serial number.
+      const lastDate = row.match(/\d{2}-\d{2}-\d{4}(?![\s\S]*\d{2}-\d{2}-\d{4})/);
+      const tail = lastDate ? row.slice(lastDate.index + lastDate[0].length) : "";
+      const n = numsIn(tail);
+      if (n.length >= 2) { out.totalDue = n[0]; out.minDue = n[1]; }
+    }
+    const pb = findIdx(/Previous Balance.*Total Payment Due/i);
+    if (pb >= 0 && L[pb + 1]) out.previousBalance = numsIn(L[pb + 1])[0];
+  }
+
   if (bank.startsWith("enbd")) {
     const card = find(/^Card Number:/i);
     if (card) out.card4 = (card.match(/(\d{4})\s*$/) || [])[1];
