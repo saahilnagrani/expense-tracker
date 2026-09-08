@@ -72,7 +72,7 @@ export const CATEGORY_RULES = [
   [/amazon ?now|amazonufg|maf hyper|waitrose|sainsbury|tesco|asda|\bm&s\b|marks ?& ?spencer|careem deliveries|careem quik|al ain food|noon minutes|%\s?arabica|lulu|carrefour|spinneys|grocer|bigbasket|blinkit|zepto|instashop|supermarket|bloomy|dmart|d-?mart|jiomart|reliance fresh|reliance smart|more retail|licious|country delight|milkbasket|natures basket|spencers|star bazaar|\bpyo\b|farm shop|\bmorrisons\b|\baldi\b|\blidl\b|\bco-?op\b/i, "Groceries"],
 
   // Restaurants / bars / pubs / dining (bars & pubs → Food & Dining too)
-  [/mcdonald|five guys|quick snack selling|royal catering|caribou coffee|coffee house|madang|kfc|starbucks|restauran|\bcafe\b|dining|\bpub\b|\bbar\b|tavern|brasserie|bistro|gastropub|krispy ?kreme|\bitsu\b|wahaca|wafflemeister|pret a manger|\bnando|wagamama|\\bleon\\b|greggs|costa coffee|\bcaff[eè]\b/i, "Food & Dining"],
+  [/mcdonald|five guys|quick snack selling|royal catering|caribou coffee|coffee house|madang|kfc|starbucks|restauran|\bcafe\b|dining|\bpub\b|\bbar\b|tavern|brasserie|bistro|gastropub|krispy ?kreme|\bitsu\b|wahaca|wafflemeister|pret a manger|\bnando|wagamama|\bleon\b|greggs|costa coffee|\bcaff[eè]\b/i, "Food & Dining"],
 
   // Transport (TfL, e-bikes like Forest, ride-hail, fuel, tolls, car washes)
   [/yango|parkonic|zofeur|dubai smart government|\brta\b|\btfl\b|\bforest\b|uber|\bcareem\b|\bola\b|metro|taxi|fuel|petrol|adnoc|enoc|salik|wash|rapido|namma yatri|blusmart|fastag|indian oil|\biocl\b|bharat petroleum|\bbpcl\b|\bhpcl\b|shell|\bbolt\b|tawasul|filling stat|\btrainline\b|national rail|\bgwr\b/i, "Transport"],
@@ -245,6 +245,11 @@ export function defaultSettings() {
     spouseName: "",
     spouseLabel: "",
     spousePasswords: {},
+    // Named trips: [{ id, name, from "YYYY-MM-DD", to }]. Dates only pre-fill
+    // the bulk-assign range — a trip is stored per transaction, never derived
+    // from dates, because rent and subscriptions go out while you're away and
+    // flights are booked months before.
+    trips: [],
     // Who holds each card/account: { [bank]: { me: bool, spouse: bool } }.
     // Absent entries fall back to the SOURCES flags (see sourceOwners), so
     // this stays empty until you actually change an owner.

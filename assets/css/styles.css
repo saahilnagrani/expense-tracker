@@ -170,6 +170,15 @@ td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; }
 .holder-label { font-size: 13.5px; font-weight: 700; color: var(--text);
   margin: 4px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 .holder-label.mt { margin-top: 22px; }
+
+/* Trips: the chip on a transaction row, and the list in Settings. */
+.trip-chip { border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
+  font: inherit; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+  cursor: pointer; white-space: nowrap; }
+.trip-chip:hover { color: var(--text); border-color: var(--brand); }
+.trip-row { display: flex; align-items: center; gap: 12px; justify-content: space-between;
+  padding: 10px 0; border-top: 1px solid var(--border); }
+.trip-row:first-child { border-top: 0; }
 .chip-sub { color: var(--muted); font-weight: 500; font-size: 11px; }
 /* statements ⇄ alerts toggle inside a source chip */
 .srcMode {

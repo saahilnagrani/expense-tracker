@@ -807,6 +807,7 @@ function renderExpenses() {
         <select id="fmerchant" class="fsel" style="max-width:260px"><option value="">All merchants</option>${merchCounts.map(([m, n]) => `<option value="${esc(m)}" ${expFilter.merchant === m ? "selected" : ""}>${esc(m)} (${n})</option>`).join("")}</select>
         <button class="btn sm secondary" id="fclear">Clear</button>
         <span class="spacer"></span>
+        <button class="btn sm secondary" id="assignTrip">Trip…</button>
         <button class="btn sm" id="addTxn">${icon("plus",15)} Add</button>
         <button class="btn sm secondary" id="expCsv" title="Export CSV" aria-label="Export CSV">${icon("download",15)} CSV</button>
       </div>
@@ -867,6 +868,11 @@ function renderExpenses() {
       renderExpenses(); // full re-render so the new category shows everywhere
       toast("Category updated", "ok");
     }));
+    // Tagging one row: the same tool, scoped to just it.
+    $$(".tripOne").forEach((b) => b.addEventListener("click", () => {
+      const e = expenses.find((x) => x.id === b.dataset.id);
+      if (e) openAssignTrip([e]);
+    }));
     $$(".del").forEach((b) => b.addEventListener("click", async () => {
       if (!confirm("Delete this transaction?")) return;
       await deleteExpense(b.dataset.id);
@@ -885,6 +891,9 @@ function renderExpenses() {
   $("#fclear").addEventListener("click", () => { expFilter = { q: "", month: "", card: "", cat: "", merchant: "", trip: "" }; expPage = 0; renderExpenses(); });
   $("#expCsv").addEventListener("click", () => exportCsv(computeFiltered()));
   $("#addTxn").addEventListener("click", () => openAddTxn(cards));
+  // Operates on whatever the filters currently show, so narrowing to one row
+  // (search for it) is how a single transaction gets tagged.
+  $("#assignTrip").addEventListener("click", () => openAssignTrip(computeFiltered()));
   paintExp();
 }
 let _t;
@@ -912,7 +921,7 @@ function rowHtml(e) {
     <td data-c="date" style="white-space:nowrap">${fmtDate(e.date)}</td>
     <td data-c="desc">${esc(e.description)}${e.kind === "credit" ? ' <span class="chip src-alert">credit</span>' : ""}</td>
     <td data-c="cat"><select class="catsel" data-id="${e.id}">${catOpts}</select></td>
-    <td data-c="src">${esc(e.card || "—")} <span class="chip src-${e.source === "manual" ? "manual" : e.source === "recurring" ? "recurring" : e.source === "alert" ? "alert" : "statement"}">${srcLabel(e.source)}</span></td>
+    <td data-c="src">${esc(e.card || "—")} <span class="chip src-${e.source === "manual" ? "manual" : e.source === "recurring" ? "recurring" : e.source === "alert" ? "alert" : "statement"}">${srcLabel(e.source)}</span>${e.trip ? ` <button type="button" class="chip trip-chip tripOne" data-id="${e.id}" title="Change or clear this trip">${esc(e.trip)}</button>` : ""}</td>
     <td data-c="amt" class="amount ${cls}">${e.kind === "credit" ? "+" : ""}${fmt(e.amount, e.currency)}</td>
     <td data-c="base" class="amount ${cls}">${base == null ? '<span class="chip" title="No FX rate for ' + e.currency + '">no rate</span>' : (e.kind === "credit" ? "+" : "") + fmtBase(base, settings)}</td>
     <td data-c="spend"><span class="chip spend-${st.cls}" title="${esc(st.title)}">${st.txt}</span></td>
@@ -1737,6 +1746,17 @@ function renderSettings() {
       <p class="hint">Each rate = value of 1 unit in your base currency. Totals convert using these. Update them whenever you like — they aren't live.</p>
       <div id="rateRows" class="mt">${curList.map(rateRowHtml).join("")}</div>
       <div class="flex mt"><input id="newCur" placeholder="Add code e.g. SAR" style="max-width:140px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2)"><button class="btn sm secondary" id="addCur">Add currency</button></div>
+    </div>
+    <div class="card mt">
+      <div class="section-title">Trips</div>
+      <p class="hint">Name a trip here, then tag transactions with it on the Expenses tab to see what the trip cost. Dates are optional and only pre-fill the range when assigning in bulk — the trip is stored on each transaction, so rent and subscriptions that happen to fall inside the window are never swept in.</p>
+      <div id="tripList" class="mt">${tripListHtml()}</div>
+      <div class="row mt" style="align-items:flex-end">
+        <div class="field" style="flex:2;min-width:170px"><label>Trip name</label><input id="tripName" placeholder="e.g. UK - May-July 2026"></div>
+        <div class="field" style="max-width:165px"><label>From (optional)</label><input type="date" id="tripFrom"></div>
+        <div class="field" style="max-width:165px"><label>To (optional)</label><input type="date" id="tripTo"></div>
+        <div><button class="btn sm secondary" id="tripAdd">Add trip</button></div>
+      </div>
     </div>`;
 
   const panePeople = () => `
@@ -1848,6 +1868,31 @@ function renderSettings() {
   });
   $$(".catDel").forEach((b) => b.addEventListener("click", () => {
     settings.categories = settings.categories.filter((c) => c !== b.dataset.c);
+    settingsSave();
+    renderSettings();
+  }));
+  $("#tripAdd")?.addEventListener("click", () => {
+    const name = $("#tripName").value.trim();
+    if (!name) return toast("Give the trip a name", "err");
+    settings.trips = settings.trips || [];
+    if (settings.trips.some((t) => t.name === name)) return toast("A trip by that name already exists", "err");
+    settings.trips.push({ id: uid(), name, from: $("#tripFrom").value || "", to: $("#tripTo").value || "" });
+    settingsSave();
+    renderSettings();
+  });
+  $$(".tripDel").forEach((b) => b.addEventListener("click", async () => {
+    const t = (settings.trips || []).find((x) => x.id === b.dataset.id);
+    if (!t) return;
+    const tagged = expenses.filter((e) => e.trip === t.name);
+    if (!confirm(`Delete the trip "${t.name}"?`)) return;
+    // The name lives on the transactions, not only in this list, so deleting
+    // the trip here would otherwise leave rows tagged with a trip you can no
+    // longer see — ask rather than silently orphaning them.
+    if (tagged.length && confirm(`${tagged.length} transaction(s) are tagged "${t.name}". Remove the tag from them too?`)) {
+      await putMany(tagged.map((e) => ({ ...e, trip: null, updatedAt: Date.now() })));
+      expenses = await allExpenses();
+    }
+    settings.trips = settings.trips.filter((x) => x.id !== t.id);
     settingsSave();
     renderSettings();
   }));
@@ -2081,6 +2126,80 @@ function openAddTxn(knownCards = []) {
     scheduleSync();
     closeModal();
     toast("Transaction added ✓", "ok");
+    renderExpenses();
+  });
+}
+
+// The configured trips, each with what's currently tagged to it.
+function tripListHtml() {
+  const trips = settings.trips || [];
+  if (!trips.length) return `<div class="hint">No trips yet.</div>`;
+  const rows = trips.map((t) => {
+    const tagged = expenses.filter((e) => e.trip === t.name);
+    const total = tagged.reduce((a, e) => a + (spendBase(e) || 0), 0);
+    const span = t.from || t.to ? `${t.from || "…"} → ${t.to || "…"}` : "no dates";
+    return `<div class="trip-row">
+      <div><b>${esc(t.name)}</b><div class="hint">${esc(span)}</div></div>
+      <div class="hint">${tagged.length} txn · ${fmtBase(total, settings)}</div>
+      <button class="btn sm secondary tripDel" data-id="${t.id}">Delete</button>
+    </div>`;
+  }).join("");
+  return rows;
+}
+
+// Tag a set of transactions with a trip (or clear it). `rows` is whatever the
+// Expenses filters are showing, optionally narrowed further by date here —
+// bulk is the point, since tagging 71 rows one at a time is nobody's evening.
+function openAssignTrip(baseRows) {
+  const trips = settings.trips || [];
+  if (!trips.length) {
+    openModal("Assign a trip", `<p class="hint">No trips defined yet. Add one under <b>Settings → General → Trips</b>, then come back.</p>
+      <div class="flex mt"><button class="btn" id="atClose">Close</button></div>`);
+    $("#atClose").addEventListener("click", closeModal);
+    return;
+  }
+  openModal("Assign a trip", `
+    <div class="field"><label>Trip</label><select id="atTrip">${trips.map((t) => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join("")}<option value="__clear__">— Clear the trip —</option></select></div>
+    <div class="row mt">
+      <div class="field" style="max-width:180px"><label>From (optional)</label><input type="date" id="atFrom"></div>
+      <div class="field" style="max-width:180px"><label>To (optional)</label><input type="date" id="atTo"></div>
+    </div>
+    <p class="hint mt">Applies to the ${baseRows.length} transaction(s) the Expenses filters are showing, narrowed by any dates above. Picking a trip fills its dates in for you.</p>
+    <div class="okbox mt" id="atCount" style="padding:8px 10px"></div>
+    <div class="flex mt"><button class="btn" id="atGo">Assign</button><button class="btn secondary" id="atCancel">Cancel</button></div>`);
+
+  const matching = () => {
+    const from = $("#atFrom").value, to = $("#atTo").value;
+    return baseRows.filter((e) => (!from || e.date >= from) && (!to || e.date <= to));
+  };
+  const refresh = () => {
+    const n = matching().length;
+    const clearing = $("#atTrip").value === "__clear__";
+    $("#atCount").textContent = `${n} transaction(s) will be ${clearing ? "cleared" : "tagged"}.`;
+    $("#atGo").disabled = n === 0;
+  };
+  // Pre-fill from the trip's own dates, which is the whole reason to store them.
+  const fillDates = () => {
+    const t = trips.find((x) => x.name === $("#atTrip").value);
+    if (t) { $("#atFrom").value = t.from || ""; $("#atTo").value = t.to || ""; }
+    refresh();
+  };
+  $("#atTrip").addEventListener("change", fillDates);
+  $("#atFrom").addEventListener("change", refresh);
+  $("#atTo").addEventListener("change", refresh);
+  $("#atCancel").addEventListener("click", closeModal);
+  fillDates();
+
+  $("#atGo").addEventListener("click", async () => {
+    const rows = matching();
+    if (!rows.length) return;
+    const val = $("#atTrip").value;
+    const trip = val === "__clear__" ? null : val;
+    await putMany(rows.map((e) => ({ ...e, trip, updatedAt: Date.now() })));
+    expenses = await allExpenses();
+    scheduleSync();
+    closeModal();
+    toast(trip ? `Tagged ${rows.length} to ${trip} ✓` : `Cleared the trip on ${rows.length} ✓`, "ok");
     renderExpenses();
   });
 }
