@@ -278,13 +278,25 @@ td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; }
 }
 
 /* ---- Dues: statement totals --------------------------------------------- */
-/* Refresh row: label, window, button. The explanatory line is the first thing
-   to go when there is no room for it. */
-.dues-refresh { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.dues-refresh label { color: var(--muted); font-size: 12.5px; font-weight: 600; }
-.dues-refresh .fsel { max-width: 150px; }
+/* The header used to alternate text, control, text, control down the card,
+   four ragged left edges before the first statement. Now it reads as two
+   blocks: what is owed, then one rule, then everything you can do about it. */
+.dues-note { margin: 6px 0 0; }
+.dues-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);
+}
+.dues-bar .fsel { max-width: 170px; }
+/* Phone: the sort takes its own line and the refresh pair shares the next, so
+   both lines are whole controls rather than a wrap landing mid-group. */
+@media (max-width: 560px) {
+  .dues-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  .dues-bar .seg { grid-column: 1 / -1; justify-self: start; }
+  .dues-bar .spacer { display: none; }
+  .dues-bar .fsel { max-width: none; width: 100%; }
+}
 .only-wide { display: none; }
-@media (min-width: 900px) { .only-wide { display: inline; } }
+@media (min-width: 900px) { .only-wide { display: block; } }
 
 /* Total on the left, order picker on the right; they stack on a phone rather
    than squeezing the segmented control against the amount. */
