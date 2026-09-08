@@ -284,13 +284,18 @@ function renderDemoBanner() {
   });
 }
 
+// The Dues tab was called Cards until it grew past listing cards. Old #cards
+// links — a bookmark, a pinned tab, a home-screen shortcut — still land on it.
+const VIEW_ALIASES = { cards: "dues" };
+
 function go(view, { keepScroll = false } = {}) {
+  view = VIEW_ALIASES[view] || view;
   closeCatPanel(); // it lives on <body>, so it would outlive the view that owns it
   const y = window.scrollY;
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
   location.hash = view;
   const fn = ({ dashboard: renderDashboard, expenses: renderExpenses,
-    add: renderAdd, import: renderImport, cards: renderCards, settings: renderSettings })[view] || renderDashboard;
+    add: renderAdd, import: renderImport, dues: renderDues, settings: renderSettings })[view] || renderDashboard;
   fn();
   if (!keepScroll) { window.scrollTo(0, 0); return; }
   // Replacing the view collapses the page height for an instant, so the
@@ -1907,7 +1912,23 @@ async function saveReview() {
 // bank, so every figure here is "as of" the statement it came from. Spend and
 // payments since are not in it, and saying so beside the number is the whole
 // difference between useful and misleading.
-function renderCards() {
+// Two orders, because the tab answers two questions. Soonest due first is the
+// one you want when paying bills; A-Z is the one you want when looking for a
+// particular card, which is the harder of the two once there are several.
+const DUES_SORTS = [["due", "Next due"], ["name", "A–Z"]];
+function sortDues(cards, mode) {
+  const byName = (a, b) => a.card.localeCompare(b.card, undefined, { sensitivity: "base" });
+  if (mode === "name") return cards.sort(byName);
+  // A card with no due date on its statement has nothing to sort by, so it
+  // goes last rather than pretending to be urgent; ties fall back to the name
+  // so the order is stable instead of depending on read order.
+  return cards.sort((a, b) => {
+    const ad = a.latest.dueDate || "9999-99-99", bd = b.latest.dueDate || "9999-99-99";
+    return ad === bd ? byName(a, b) : (ad < bd ? -1 : 1);
+  });
+}
+
+function renderDues() {
   // Group by card label, newest statement first, so a reissued card stays one
   // row with its number changing down the history.
   const byCard = new Map();
@@ -1918,9 +1939,9 @@ function renderCards() {
   }
   for (const list of byCard.values()) list.sort((a, b) => (a.statementDate < b.statementDate ? 1 : -1));
 
-  const cards = [...byCard.entries()].map(([card, list]) => ({ card, latest: list[0], history: list.slice(1) }))
-    // Soonest due first: the only order that answers "what needs paying next".
-    .sort((a, b) => (a.latest.dueDate || "9999") < (b.latest.dueDate || "9999") ? -1 : 1);
+  const sort = DUES_SORTS.some(([id]) => id === settings.duesSort) ? settings.duesSort : "due";
+  const cards = sortDues(
+    [...byCard.entries()].map(([card, list]) => ({ card, latest: list[0], history: list.slice(1) })), sort);
 
   if (!cards.length) {
     views.innerHTML = `<div class="card empty">
@@ -1963,11 +1984,25 @@ function renderCards() {
 
   views.innerHTML = `
     <div class="card">
-      <div class="hint">Total due across ${cards.length} card${cards.length > 1 ? "s" : ""}</div>
-      <div class="cc-total">${fmtBase(total, settings)}</div>
+      <div class="dues-head">
+        <div>
+          <div class="hint">Total due across ${cards.length} card${cards.length > 1 ? "s" : ""}</div>
+          <div class="cc-total">${fmtBase(total, settings)}</div>
+        </div>
+        ${cards.length > 1 ? `<div class="seg" role="group" aria-label="Order cards by">
+          ${DUES_SORTS.map(([id, label]) =>
+            `<button type="button" class="${sort === id ? "on" : ""}" data-sort="${id}" aria-pressed="${sort === id}">${label}</button>`).join("")}
+        </div>` : ""}
+      </div>
       <p class="hint mt">As each card's most recent statement — not a live balance. Spend and payments since then aren't counted.</p>
       <div class="cc-list mt">${cards.map(cardHtml).join("")}</div>
     </div>`;
+
+  $$(".dues-head .seg button").forEach((b) => b.addEventListener("click", () => {
+    settings.duesSort = b.dataset.sort;
+    saveSettings(settings);
+    renderDues();
+  }));
 }
 
 // ---------- Settings ----------

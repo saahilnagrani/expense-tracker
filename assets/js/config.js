@@ -254,6 +254,10 @@ export function defaultSettings() {
     // Absent entries fall back to the SOURCES flags (see sourceOwners), so
     // this stays empty until you actually change an owner.
     owners: {},
+    // Dues tab ordering: "due" (soonest payment first) or "name" (A-Z).
+    // Device-local — it is a way of looking at the list, not data about it,
+    // so it is deliberately left out of the synced prefs blob.
+    duesSort: "due",
     // Fixed monthly expenses not paid by card (rent, house help, cook, …).
     // Each: { id, description, amount, currency, category, paidVia,
     //         dayOfMonth, startMonth "YYYY-MM", endMonth?, active }
