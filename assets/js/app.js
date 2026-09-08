@@ -83,6 +83,39 @@ function catOptionsHtml(selected) {
 // separate rows, so you can fetch yours without fetching theirs. Yours is
 // stored under the bare bank id (what the list held before this became
 // per-holder), theirs under "bank@spouse".
+// Three sources carried the mode in their own name ("ICICI Bank alerts"), so
+// the UI's mode badge printed it twice — "ICICI Bank alerts alerts". The name
+// is also stamped on every imported transaction as its card, so renaming the
+// source without renaming those rows would strand them under a card that no
+// longer exists. This runs once and fixes both.
+const SOURCE_LABEL_RENAMES = {
+  "ICICI Bank alerts": "ICICI Bank",
+  "SBI alerts": "SBI",
+  "Kotak alerts": "Kotak",
+};
+async function migrateSourceLabels() {
+  if (settings.sourceLabelsV2) return;
+  const updated = [];
+  for (const e of expenses) {
+    if (!e.card) continue;
+    for (const [from, to] of Object.entries(SOURCE_LABEL_RENAMES)) {
+      // Matches the bare label and the household form, "<label> (Harshita)".
+      if (e.card !== from && !e.card.startsWith(from + " (")) continue;
+      const n = { ...e, card: to + e.card.slice(from.length), updatedAt: Date.now() };
+      n.dedupeKey = dedupeKey(n); // the card is part of the key, so recompute
+      updated.push(n);
+      break;
+    }
+  }
+  if (updated.length) {
+    await putMany(updated);
+    expenses = await allExpenses();
+    scheduleSync();
+  }
+  settings.sourceLabelsV2 = true;
+  saveSettings(settings);
+}
+
 const SPOUSE_SUFFIX = "@spouse";
 const srcKey = (bank, who) => (who === "spouse" ? bank + SPOUSE_SUFFIX : bank);
 const isEnabled = (src, who) => settings.enabledSources.includes(srcKey(src.bank, who));
@@ -167,6 +200,7 @@ async function boot() {
   await migrateRefundCategory();
   migrateCategoryList();
   migrateEnabledSources();
+  await migrateSourceLabels();
   updateBasePill();
   hydrateIcons();
   initSelectEnhancer();
@@ -798,18 +832,28 @@ function renderExpenses() {
   // on search/filter, so the search input keeps focus while you type.
   views.innerHTML = `
     <div class="card">
-      <div class="flex filters">
-        <input id="fq" placeholder="Search merchant / card…" value="${esc(expFilter.q)}" style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)">
+      <div class="exp-bar">
+        <input id="fq" placeholder="Search merchant / card…" value="${esc(expFilter.q)}">
+        <button class="btn sm" id="addTxn">${icon("plus",15)} Add</button>
+      </div>
+      <div class="exp-bar2">
+        <button type="button" class="fbtn" id="fToggle" aria-expanded="false">Filters<span class="fcount" id="fCount" hidden>0</span></button>
+        <span class="spacer"></span>
+        <button type="button" class="fbtn only-narrow" id="expMore" aria-label="More actions" aria-expanded="false">···</button>
+        <button class="btn sm secondary in-more" id="assignTrip">Trip…</button>
+        <button class="btn sm secondary in-more" id="expCsv" title="Export CSV">${icon("download",15)} CSV</button>
+      </div>
+      <div class="fchips" id="fChips"></div>
+      <div class="filters-panel" id="fPanel">
         <select id="fmonth" class="fsel"><option value="">All months</option>${months.map((m) => `<option value="${m}" ${expFilter.month === m ? "selected" : ""}>${fmtMonth(m)}</option>`).join("")}</select>
         <select id="fcard" class="fsel"><option value="">All cards</option>${cards.map((c) => `<option ${expFilter.card === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
         <select id="fcat" class="fsel"><option value="">All categories</option>${catCounts.map(([c, n]) => `<option value="${esc(c)}" ${expFilter.cat === c ? "selected" : ""}>${esc(c)} (${n})</option>`).join("")}</select>
-        ${trips.length ? `<select id="ftrip" class="fsel" style="max-width:210px"><option value="">All trips</option><option value="__none__" ${expFilter.trip === "__none__" ? "selected" : ""}>Not on a trip</option>${trips.map((t) => `<option value="${esc(t)}" ${expFilter.trip === t ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>` : ""}
-        <select id="fmerchant" class="fsel" style="max-width:260px"><option value="">All merchants</option>${merchCounts.map(([m, n]) => `<option value="${esc(m)}" ${expFilter.merchant === m ? "selected" : ""}>${esc(m)} (${n})</option>`).join("")}</select>
-        <button class="btn sm secondary" id="fclear">Clear</button>
-        <span class="spacer"></span>
-        <button class="btn sm secondary" id="assignTrip">Trip…</button>
-        <button class="btn sm" id="addTxn">${icon("plus",15)} Add</button>
-        <button class="btn sm secondary" id="expCsv" title="Export CSV" aria-label="Export CSV">${icon("download",15)} CSV</button>
+        ${trips.length ? `<select id="ftrip" class="fsel"><option value="">All trips</option><option value="__none__" ${expFilter.trip === "__none__" ? "selected" : ""}>Not on a trip</option>${trips.map((t) => `<option value="${esc(t)}" ${expFilter.trip === t ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>` : ""}
+        <select id="fmerchant" class="fsel"><option value="">All merchants</option>${merchCounts.map(([m, n]) => `<option value="${esc(m)}" ${expFilter.merchant === m ? "selected" : ""}>${esc(m)} (${n})</option>`).join("")}</select>
+        <div class="panel-foot">
+          <button class="btn sm secondary" id="fclear">Clear all</button>
+          <button class="btn sm only-narrow" id="fDone">Show</button>
+        </div>
       </div>
       <div class="hint mt" id="expCount"></div>
       <div id="expPagerTop" class="flex mt pager" style="align-items:center;gap:10px"></div>
@@ -833,6 +877,7 @@ function renderExpenses() {
     if (expPage < 0) expPage = 0;
     const pageRows = filtered.slice(expPage * EXP_PAGE, expPage * EXP_PAGE + EXP_PAGE);
     $("#expCount").innerHTML = `${filtered.length} transaction(s) · spend total ${fmtBase(totalBase, settings)}`;
+    paintFilterState(filtered.length);
     $("#expBody").innerHTML = pageRows.map(rowHtml).join("") || `<tr><td colspan="8" class="hint" style="padding:24px">No matching transactions.</td></tr>`;
     // Same pager above and below the table, so you can page without scrolling
     // to the far end of a 200-row page.
@@ -888,6 +933,44 @@ function renderExpenses() {
   ["fmonth", "fcard", "fcat", "fmerchant", "ftrip"].forEach((id) => $("#" + id)?.addEventListener("change", (e) => {
     expFilter[id.slice(1)] = e.target.value; expPage = 0; paintExp();
   }));
+  // A count on the button says how many filters are on; the chips say which,
+  // which a bare number can't — and each one clears itself, so the permanent
+  // Clear button is only needed inside the panel.
+  const FILTER_LABELS = { month: "", card: "", cat: "", merchant: "", trip: "" };
+  function paintFilterState(shown) {
+    const active = Object.keys(FILTER_LABELS).filter((k) => expFilter[k]);
+    const cnt = $("#fCount");
+    if (cnt) { cnt.textContent = String(active.length); cnt.hidden = active.length === 0; }
+    const done = $("#fDone");
+    if (done) done.textContent = `Show ${shown}`;
+    const box = $("#fChips");
+    if (!box) return;
+    box.innerHTML = active.map((k) => {
+      const v = k === "month" ? fmtMonth(expFilter[k])
+        : k === "trip" && expFilter[k] === "__none__" ? "Not on a trip"
+        : expFilter[k];
+      return `<button type="button" class="fchip" data-k="${k}">${esc(v)}<span aria-hidden="true">✕</span><span class="sr-only"> — remove filter</span></button>`;
+    }).join("");
+    $$("#fChips .fchip").forEach((b) => b.addEventListener("click", () => {
+      expFilter[b.dataset.k] = "";
+      const sel = $("#f" + (b.dataset.k === "cat" ? "cat" : b.dataset.k));
+      if (sel) sel.value = "";
+      expPage = 0; paintExp();
+    }));
+  }
+
+  $("#fToggle").addEventListener("click", () => {
+    const open = views.classList.toggle("filters-open");
+    $("#fToggle").setAttribute("aria-expanded", String(open));
+  });
+  $("#fDone")?.addEventListener("click", () => {
+    views.classList.remove("filters-open");
+    $("#fToggle").setAttribute("aria-expanded", "false");
+  });
+  $("#expMore").addEventListener("click", () => {
+    const open = views.classList.toggle("more-open");
+    $("#expMore").setAttribute("aria-expanded", String(open));
+  });
   $("#fclear").addEventListener("click", () => { expFilter = { q: "", month: "", card: "", cat: "", merchant: "", trip: "" }; expPage = 0; renderExpenses(); });
   $("#expCsv").addEventListener("click", () => exportCsv(computeFiltered()));
   $("#addTxn").addEventListener("click", () => openAddTxn(cards));
@@ -1091,14 +1174,28 @@ function renderImport() {
       ${IS_DEMO ? `<div class="warnbox mt">Gmail import is switched off in the demo — it would need access to a real inbox. The sample transactions on the other tabs are what an import produces. Everything else is fully usable: edit categories, delete rows, add fixed expenses, then hit <b>Reset demo data</b> in the banner to start over.</div>` : ""}
       ${(() => {
         const spName = settings.spouseName || "Their";
+        // One row per source: tick, name, mode. Rows rather than wrapped pills
+        // because twelve chips of twelve widths can only wrap raggedly, and a
+        // single left edge for names with a single right edge for modes is what
+        // makes the list scannable.
         const chip = (s, who) => {
           const mode = sourceMode(s);
-          // Statements-vs-alerts is a property of the card, not of who holds
-          // it, so both holders' rows show it and flipping either flips both.
+          // Statements-vs-alerts belongs to the card, not to who holds it, so
+          // both holders' rows show it and flipping either flips both. Every
+          // row states its mode: a live control where there is a real choice,
+          // a quiet label where the source can only do the one thing.
           const badge = canSwitchMode(s)
-            ? `<button type="button" class="srcMode" data-bank="${s.bank}" title="Importing from ${mode === "alert" ? "per-transaction alert emails — click for monthly statements" : "monthly statement PDFs — click for per-transaction alerts"}">${mode === "alert" ? "alerts" : "statements"}</button>`
-            : `<span class="chip-sub">${mode === "alert" ? "alerts" : "statements"}</span>`;
-          return `<label class="chip" style="cursor:pointer;user-select:none"><input type="checkbox" class="srcChk" value="${srcKey(s.bank, who)}" ${isEnabled(s, who) ? "checked" : ""} style="margin-right:6px">${esc(s.label)} ${badge}</label>`;
+            ? `<span class="mode-seg" role="group" aria-label="Import from">
+                 <button type="button" class="srcMode${mode === "statement" ? " on" : ""}" data-bank="${s.bank}" data-mode="statement">Statements</button>
+                 <button type="button" class="srcMode${mode === "alert" ? " on" : ""}" data-bank="${s.bank}" data-mode="alert">Alerts</button>
+               </span>`
+            : `<span class="mode-fixed">${mode === "alert" ? "alerts only" : "statements only"}</span>`;
+          const on = isEnabled(s, who);
+          return `<label class="src-row${on ? " on" : ""}">
+            <input type="checkbox" class="srcChk" value="${srcKey(s.bank, who)}" ${on ? "checked" : ""}>
+            <span class="src-nm">${esc(s.label)}</span>
+            ${badge}
+          </label>`;
         };
         // Who holds a card comes from Settings → Cards. With no second person
         // there is only one holder, so the person headings are left off.
@@ -1113,29 +1210,29 @@ function renderImport() {
           return `
         ${label ? `<div class="holder-label mt">${esc(label)}</div>` : ""}
         ${cc.length ? `<div class="pill-group-label${label ? "" : " mt"}">Credit cards</div>
-        <div class="pill-tabs">${cc.map((s) => chip(s, who)).join("")}</div>` : ""}
+        <div class="src-list">${cc.map((s) => chip(s, who)).join("")}</div>` : ""}
         ${acct.length ? `<div class="pill-group-label mt">Bank accounts</div>
-        <div class="pill-tabs">${acct.map((s) => chip(s, who)).join("")}</div>` : ""}`;
+        <div class="src-list">${acct.map((s) => chip(s, who)).join("")}</div>` : ""}`;
         }).join("");
       })()}
       ${connected ? `
-      <div class="flex mt" style="gap:8px;flex-wrap:wrap;align-items:center">
-        <button class="btn" id="fetchBtn">Fetch new</button>
-        <span class="hint">or</span>
-        <select id="impMonth" class="fsel" style="max-width:150px">${recentMonths().map((ym) => `<option value="${ym}">${esc(fmtMonth(ym))}</option>`).join("")}</select>
-        <button class="btn secondary" id="fetchMonthBtn">Import month</button>
-        <span class="spacer"></span>
-        <button class="btn secondary" id="disconnectBtn">Disconnect</button>
-      </div>
-      <p class="hint">“Fetch new” reads only what has arrived since your last import, so it takes seconds. Use “Import month” to backfill history a month at a time — re-importing a month is always safe, nothing is double-counted.</p>
-      ${importedMonthsHint()}
-      <div class="row mt">
-        <div class="field" style="max-width:200px"><label>Statement look-back (Fetch new)</label>
-          <select id="lookback">
-            ${[3, 6, 12, 24].map((m) => `<option value="${m}" ${settings.lookbackMonths === m ? "selected" : ""}>${m} months</option>`).join("")}
-          </select>
+      <div class="act-pair mt">
+        <div class="act">
+          <div class="act-top"><span class="act-lbl">Fetch new</span><button class="btn" id="fetchBtn">Fetch</button></div>
+          <p class="hint">Reads only what has arrived since your last import. Takes seconds.</p>
+          <div class="act-set"><label for="lookback">Look back</label>
+            <select id="lookback" class="fsel">${[3, 6, 12, 24].map((m) => `<option value="${m}" ${settings.lookbackMonths === m ? "selected" : ""}>${m} months</option>`).join("")}</select>
+          </div>
         </div>
-      </div>` : `
+        <div class="act">
+          <div class="act-top"><span class="act-lbl">Backfill a month</span><button class="btn secondary" id="fetchMonthBtn">Import</button></div>
+          <p class="hint">Re-importing a month is always safe — nothing is double-counted.</p>
+          <div class="act-set"><label for="impMonth">Month</label>
+            <select id="impMonth" class="fsel">${recentMonths().map((ym) => `<option value="${ym}">${esc(fmtMonth(ym))}</option>`).join("")}</select>
+          </div>
+        </div>
+      </div>
+      ${importedMonthsHint()}` : `
       <div class="row mt"><div class="field" style="align-self:flex-end">
         <button class="btn" id="connectBtn" ${hasClientId ? "" : "disabled"}>Connect Gmail</button>
       </div></div>`}
@@ -1156,12 +1253,16 @@ function renderImport() {
   $("#lookback")?.addEventListener("change", (e) => { settings.lookbackMonths = +e.target.value; saveSettings(settings); });
   // Flip a source between statement PDFs and per-transaction alerts. Inside a
   // <label>, so stop the click from also toggling the source's checkbox.
+  // Two buttons now, each naming the mode it selects, rather than one button
+  // you had to press to discover it was a toggle. Inside a <label>, so stop the
+  // click from also flipping the source's checkbox.
   $$(".srcMode").forEach((b) => b.addEventListener("click", (e) => {
     e.preventDefault(); e.stopPropagation();
     const bank = b.dataset.bank;
-    settings.sourceMode = settings.sourceMode || {};
     const src = SOURCES.find((s) => s.bank === bank);
-    settings.sourceMode[bank] = sourceMode(src) === "alert" ? "statement" : "alert";
+    if (!src || sourceMode(src) === b.dataset.mode) return;
+    settings.sourceMode = settings.sourceMode || {};
+    settings.sourceMode[bank] = b.dataset.mode;
     saveSettings(settings); markPrefsChanged();
     renderImport();
   }));
@@ -1751,11 +1852,13 @@ function renderSettings() {
       <div class="section-title">Trips</div>
       <p class="hint">Name a trip here, then tag transactions with it on the Expenses tab to see what the trip cost. Dates are optional and only pre-fill the range when assigning in bulk — the trip is stored on each transaction, so rent and subscriptions that happen to fall inside the window are never swept in.</p>
       <div id="tripList" class="mt">${tripListHtml()}</div>
-      <div class="row mt" style="align-items:flex-end">
-        <div class="field" style="flex:2;min-width:170px"><label>Trip name</label><input id="tripName" placeholder="e.g. UK - May-July 2026"></div>
-        <div class="field" style="max-width:165px"><label>From (optional)</label><input type="date" id="tripFrom"></div>
-        <div class="field" style="max-width:165px"><label>To (optional)</label><input type="date" id="tripTo"></div>
-        <div><button class="btn sm secondary" id="tripAdd">Add trip</button></div>
+      <div class="trip-add mt">
+        <div class="field" style="margin:0"><label for="tripName">Trip name</label><input id="tripName" placeholder="e.g. UK - May-July 2026"></div>
+        <div class="trip-dates">
+          <div class="field" style="margin:0"><label for="tripFrom">From <span class="chip-sub">optional</span></label><input type="date" id="tripFrom"></div>
+          <div class="field" style="margin:0"><label for="tripTo">To <span class="chip-sub">optional</span></label><input type="date" id="tripTo"></div>
+        </div>
+        <button class="btn trip-go" id="tripAdd">Add trip</button>
       </div>
     </div>`;
 
@@ -1781,7 +1884,7 @@ function renderSettings() {
       <p class="hint">Create a free <b>Web</b> OAuth Client ID in Google Cloud, enable the Gmail API, and add this site's URL as an authorized JavaScript origin. Full walkthrough in the README. It stays on this device — it's the one setting that never syncs.</p>
       <div class="flex mt">
         ${GM.isSignedIn()
-          ? `<span class="okbox" style="padding:6px 10px">Connected</span><button class="btn" id="syncNow">Sync now</button>`
+          ? `<span class="okbox" style="padding:6px 10px">Connected</span><button class="btn" id="syncNow">Sync now</button><button class="btn secondary" id="setDisconnect">Disconnect</button>`
           : `<button class="btn" id="syncConnect" ${settings.googleClientId ? "" : "disabled"}>Connect Google account</button>`}
         <label class="flex" style="gap:6px;cursor:pointer"><input type="checkbox" id="autoSync" ${settings.autoSync ? "checked" : ""}> Auto-sync on changes</label>
       </div>
@@ -1947,6 +2050,14 @@ function renderSettings() {
     catch (e) { toast(e.message, "err"); }
   });
   $("#syncNow")?.addEventListener("click", () => runSync(false));
+  // Disconnecting sits here rather than on Import: connecting already does, and
+  // it is the one button in either place you would regret pressing by accident.
+  $("#setDisconnect")?.addEventListener("click", () => {
+    if (!confirm("Disconnect the Google account? Import and sync stop until you reconnect. Nothing already saved is deleted.")) return;
+    GM.disconnect();
+    toast("Disconnected", "ok");
+    renderSettings();
+  });
   lastSyncedAt().then((t) => {
     const el = $("#syncStatus");
     if (el) el.textContent = t ? "Last synced " + new Date(t).toLocaleString() : "Not synced yet on this device.";
@@ -2133,7 +2244,10 @@ function openAddTxn(knownCards = []) {
 // The configured trips, each with what's currently tagged to it.
 function tripListHtml() {
   const trips = settings.trips || [];
-  if (!trips.length) return `<div class="hint">No trips yet.</div>`;
+  if (!trips.length) {
+    return `<div class="trip-empty"><b>No trips yet</b>
+      <div class="hint" style="margin-top:3px">Name one below, then tag transactions with it on the Expenses tab.</div></div>`;
+  }
   const rows = trips.map((t) => {
     const tagged = expenses.filter((e) => e.trip === t.name);
     const total = tagged.reduce((a, e) => a + (spendBase(e) || 0), 0);

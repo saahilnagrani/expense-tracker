@@ -171,6 +171,97 @@ td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; }
   margin: 4px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 .holder-label.mt { margin-top: 22px; }
 
+/* ---- Import source list -------------------------------------------------
+   Rows, not wrapped pills: twelve chips of twelve widths can only wrap
+   raggedly, while rows give one left edge for names and one right edge for
+   modes. Two columns where there is room, so the density matches the chips. */
+.src-list { display: grid; grid-template-columns: 1fr; gap: 0 26px; }
+@media (min-width: 760px) { .src-list { grid-template-columns: 1fr 1fr; } }
+.src-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; gap: 10px; padding: 9px 8px; border-radius: 8px;
+  cursor: pointer; user-select: none; border-top: 1px solid var(--border);
+}
+.src-list > .src-row:first-child { border-top: 0; }
+@media (min-width: 760px) { .src-list > .src-row:nth-child(2) { border-top: 0; } }
+.src-row.on { background: color-mix(in srgb, var(--brand) 7%, transparent); }
+.src-row:hover { background: color-mix(in srgb, var(--brand) 11%, transparent); }
+.src-nm { font-size: 14px; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+/* A source that can only do one thing still says which, so the absence of a
+   control reads as an answer rather than as something missing. */
+.mode-fixed { color: var(--muted); font-size: 11px; font-weight: 500; white-space: nowrap; }
+.mode-seg {
+  display: inline-flex; padding: 2px; gap: 2px; background: var(--chip);
+  border: 1px solid var(--border); border-radius: 8px; flex: none;
+}
+.mode-seg .srcMode {
+  appearance: none; border: 0; background: transparent; color: var(--muted);
+  font: 600 10.5px/1 inherit; padding: 5px 7px; border-radius: 6px;
+  cursor: pointer; white-space: nowrap;
+}
+.mode-seg .srcMode.on { background: var(--brand); color: #fff; }
+.mode-seg .srcMode:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+/* ---- Import actions: two jobs, two blocks ------------------------------- */
+.act-pair { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 760px) { .act-pair { grid-template-columns: 1fr 1fr; } }
+.act {
+  border: 1px solid var(--border); border-radius: 11px; padding: 12px;
+  background: var(--panel-2); display: flex; flex-direction: column; gap: 8px;
+}
+.act-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.act-lbl { font-weight: 700; font-size: 14.5px; }
+.act .hint { margin: 0; }
+.act-set { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.act-set label { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+.act-set .fsel { max-width: 170px; }
+
+/* ---- Expenses toolbar ---------------------------------------------------
+   Thirteen controls filled 58% of a phone screen before the first
+   transaction. Search and Add stay out; the filters collapse behind a button
+   carrying a count; Trip… and CSV move into an overflow. On a wide screen
+   there is room for all of it, so none of the collapsing applies. */
+.exp-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.exp-bar > input {
+  padding: 9px 12px; border: 1px solid var(--border);
+  border-radius: 10px; background: var(--panel-2); min-width: 0;
+}
+.exp-bar2 { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.fbtn {
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+  border-radius: 10px; padding: 8px 12px; font: 600 13.5px/1.2 inherit;
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.fbtn:hover { border-color: color-mix(in srgb, var(--brand) 50%, var(--border)); }
+.fcount { background: var(--brand); color: #fff; border-radius: 999px;
+  font-size: 11px; font-weight: 700; padding: 1px 6px; }
+.fchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fchips:not(:empty) { margin-top: 9px; }
+.fchip {
+  background: color-mix(in srgb, var(--brand) 13%, transparent); color: var(--brand);
+  border: 0; border-radius: 999px; padding: 4px 9px;
+  font: 600 12px/1.3 inherit; display: inline-flex; align-items: center; gap: 6px;
+}
+.filters-panel { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.filters-panel .fsel { flex: 1; min-width: 150px; }
+.panel-foot { display: flex; gap: 8px; align-items: center; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+/* Wide: everything on show, so the toggles have nothing to do. */
+#fToggle, .only-narrow { display: none; }
+@media (max-width: 640px) {
+  #fToggle { display: inline-flex; }
+  .only-narrow { display: inline-flex; }
+  /* Collapsed by default; the button opens them. */
+  #views:not(.filters-open) .filters-panel { display: none; }
+  #views:not(.more-open) .in-more { display: none; }
+  .filters-panel { flex-direction: column; }
+  .filters-panel .fsel { width: 100%; max-width: none; }
+  .panel-foot > .btn { flex: 1; }
+}
+
 /* Trips: the chip on a transaction row, and the list in Settings. */
 .trip-chip { border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
   font: inherit; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
@@ -179,15 +270,23 @@ td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; }
 .trip-row { display: flex; align-items: center; gap: 12px; justify-content: space-between;
   padding: 10px 0; border-top: 1px solid var(--border); }
 .trip-row:first-child { border-top: 0; }
-.chip-sub { color: var(--muted); font-weight: 500; font-size: 11px; }
-/* statements ⇄ alerts toggle inside a source chip */
-.srcMode {
-  appearance: none; border: 1px solid var(--border); background: var(--panel);
-  color: var(--muted); font: inherit; font-size: 10.5px; font-weight: 700; line-height: 1;
-  text-transform: uppercase; letter-spacing: .03em;
-  padding: 3px 7px; border-radius: 999px; cursor: pointer; margin-left: 2px;
+/* The add form. From and To are one control and must stay on one line at every
+   width; leaving all four fields to a wrapping flex row split the pair and
+   stranded the button beside a field it has nothing to do with. */
+.trip-add { display: grid; gap: 10px; grid-template-columns: 1fr; }
+.trip-add .trip-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.trip-add .trip-go { width: 100%; }
+@media (min-width: 700px) {
+  .trip-add { grid-template-columns: 2fr 1fr 1fr auto; align-items: end; }
+  .trip-add .trip-dates { display: contents; }
+  .trip-add .trip-go { width: auto; }
 }
-.srcMode:hover { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 50%, var(--border)); }
+.trip-empty {
+  border: 1px dashed var(--border); border-radius: 10px; padding: 14px;
+  text-align: center; margin-bottom: 14px;
+}
+.trip-empty b { display: block; font-size: 14px; }
+.chip-sub { color: var(--muted); font-weight: 500; font-size: 11px; }
 
 /* Statement passwords: one block per card, so the password hint can wrap to
    full width instead of being clipped inside an input's placeholder. */
@@ -340,7 +439,6 @@ table.data th { font-size: 11.5px; letter-spacing: .04em; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; }
 .tab-ic svg { width: 22px; height: 22px; }
-.pill-tabs, .flex { } /* no-op keeps specificity intent */
 
 /* Respect reduced-motion preferences */
 @media (prefers-reduced-motion: reduce) {
@@ -352,7 +450,6 @@ table.data th { font-size: 11.5px; letter-spacing: .04em; }
 .rev-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 @media (max-width: 640px){ .rev-grid { grid-template-columns: 1fr; } }
 .rev-grid .field { margin: 0; }
-.pill-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 
 /* Compact inline-editable cells in the import review table */
 .cellin { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background-color: var(--panel-2); width: 100%; font-size: 13px; }
