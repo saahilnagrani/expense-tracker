@@ -511,3 +511,143 @@ function linkGroup(rows, flag = true) {
     else if (flag) { gst.needsReview = true; gst.reviewReason = addReason(gst.reviewReason, "GST: multiple possible forex fees — set the category manually"); }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Statement summary: the header block every credit-card statement carries —
+// total due, minimum due, statement and payment-due dates, credit limit and
+// the card's last 4. The transaction parser already recognises these lines
+// (SUMMARY_LINE) but only in order to skip them, because they aren't
+// transactions; this reads the values instead of discarding them.
+//
+// Every bank prints it differently, so each gets its own reader. Anything a
+// bank doesn't state plainly is left undefined rather than guessed — a wrong
+// due date is worse than a blank one.
+// ---------------------------------------------------------------------------
+
+const num = (s) => {
+  const n = parseFloat(String(s).replace(/,/g, ""));
+  return isFinite(n) ? n : undefined;
+};
+// Every date in a line, as YYYY-MM-DD. Handles 05/08/26, 05/08/2026 and
+// 26-Jul-26 (Emirates NBD).
+function datesIn(line) {
+  const out = [];
+  for (const m of line.matchAll(/\b(\d{2})[\/-](\d{2})[\/-](\d{2,4})\b/g)) {
+    out.push(`${m[3].length === 2 ? "20" + m[3] : m[3]}-${m[2]}-${m[1]}`);
+  }
+  for (const m of line.matchAll(/\b(\d{1,2})-([A-Za-z]{3})-(\d{2,4})\b/g)) {
+    const mo = MONTHS[m[2].toLowerCase()];   // the map declared at the top
+    if (mo) out.push(`${m[3].length === 2 ? "20" + m[3] : m[3]}-${String(mo).padStart(2, "0")}-${m[1].padStart(2, "0")}`);
+  }
+  return out;
+}
+// Bare numbers on a line, ignoring anything glued to letters.
+const numsIn = (line) => (line.match(/(?<![\w.])\d[\d,]*\.\d{2}(?![\w.])|(?<![\w.])\d[\d,]*(?![\w.\d])/g) || []).map(num).filter((n) => n !== undefined);
+
+export function parseStatementSummary(bank, lines) {
+  const L = lines.map((l) => String(l).replace(/\s+/g, " ").trim()).filter(Boolean);
+  const find = (re) => L.find((l) => re.test(l));
+  const findIdx = (re) => L.findIndex((l) => re.test(l));
+  const out = { bank };
+
+  if (bank === "adcb") {
+    // "Card No : XXXXXXXXXXXX9831 - SAAHIL NAGRANI"
+    const card = find(/^Card No\s*:/i);
+    if (card) out.card4 = (card.match(/(\d{4})\b/) || [])[1];
+    // "05/08/2026 NEW BALANCE OUTSTANDING 4829.36" — the one labelled line
+    // carrying both the statement date and the amount owed.
+    const nb = find(/NEW BALANCE OUTSTANDING/i);
+    if (nb) {
+      out.totalDue = numsIn(nb).pop();
+      out.statementDate = datesIn(nb)[0];
+    }
+    const prev = find(/PREVIOUS BALANCE OUTSTANDING/i);
+    if (prev) out.previousBalance = numsIn(prev).pop();
+    // The due date sits in the address block, sometimes on its own line and
+    // sometimes glued to the city, depending how long the address is. Both
+    // samples agree on this much: the header holds exactly two short dates,
+    // the statement date and the payment due date.
+    const header = L.slice(0, 12).flatMap((l) => l.match(/\b\d{2}\/\d{2}\/\d{2}\b/g) || []);
+    const asIso = header.map((d) => datesIn(d)[0]);
+    out.dueDate = asIso.find((d) => d && d !== out.statementDate);
+  }
+
+  if (bank === "wio") {
+    // "PAYMENT DUE DATE MIN. PAYMENT DUE TOTAL TO PAY" then a line ending
+    // "<due date> <min> <total>".
+    const hi = findIdx(/PAYMENT DUE DATE.*MIN\..*TOTAL TO PAY/i);
+    for (let i = hi + 1; i >= 0 && i < Math.min(L.length, hi + 5); i++) {
+      const d = datesIn(L[i]);
+      const n = numsIn(L[i]);
+      if (d.length === 1 && n.length >= 2) {
+        out.dueDate = d[0];
+        out.totalDue = n[n.length - 1];
+        out.minDue = n[n.length - 2];
+        break;
+      }
+    }
+    const period = find(/^FROM \d.* TO \d/i);
+    if (period) out.statementDate = datesIn(period).pop();
+    const cl = findIdx(/^CREDIT LIMIT\b/i);
+    if (cl >= 0 && L[cl + 1]) out.creditLimit = numsIn(L[cl + 1])[0];
+    // Wio bills, then autopays. The header total is what it billed; the
+    // closing balance is what was left after the autopay cleared it.
+    const close = find(/Closing balance/i);
+    if (close) out.closingBalance = numsIn(close).pop();
+    // The Card Number column repeats on every transaction line.
+    const masks = L.flatMap((l) => l.match(/\*{2,}(\d{4})\b/g) || []).map((m) => m.slice(-4));
+    if (masks.length) {
+      const tally = {};
+      for (const m of masks) tally[m] = (tally[m] || 0) + 1;
+      out.card4 = Object.entries(tally).sort((a, b) => b[1] - a[1])[0][0];
+    }
+  }
+
+  if (bank.startsWith("enbd")) {
+    const card = find(/^Card Number:/i);
+    if (card) out.card4 = (card.match(/(\d{4})\s*$/) || [])[1];
+    // "Credit Limit  Available…  Statement Date  Payment Due Date  Minimum Payment Due"
+    const hi = findIdx(/Credit Limit.*Statement Date.*Payment Due Date/i);
+    if (hi >= 0 && L[hi + 1]) {
+      const n = numsIn(L[hi + 1]), d = datesIn(L[hi + 1]);
+      if (n.length) out.creditLimit = n[0];
+      if (d.length >= 2) { out.statementDate = d[0]; out.dueDate = d[1]; }
+      if (n.length) out.minDue = n[n.length - 1];
+    }
+    // The summary values line: six figures, the fifth being Total Payment Due.
+    const si = findIdx(/Total Payment Due \(AED\)/i);
+    for (let i = si + 1; si >= 0 && i < Math.min(L.length, si + 4); i++) {
+      const n = numsIn(L[i]);
+      if (n.length === 6) { out.previousBalance = n[0]; out.totalDue = n[4]; break; }
+    }
+  }
+
+  if (bank.startsWith("axis")) {
+    // "Total Payment Due  Minimum Payment Due  Statement Period  Payment Due Date  Statement Generation Date"
+    const hi = findIdx(/Total Payment Due.*Minimum Payment Due.*Payment Due Date/i);
+    if (hi >= 0 && L[hi + 1]) {
+      const row = L[hi + 1];
+      const n = numsIn(row), d = datesIn(row);
+      if (n.length >= 2) { out.totalDue = n[0]; out.minDue = n[1]; }
+      // period start, period end, due date, generation date
+      if (d.length >= 4) { out.dueDate = d[2]; out.statementDate = d[3]; }
+    }
+    const ci = findIdx(/^Credit Card Number\b/i);
+    if (ci >= 0 && L[ci + 1]) {
+      const m = L[ci + 1].match(/(\d{4,6})\*+(\d{4})\b/);
+      if (m) out.card4 = m[2];
+      // Strip the masked card first: its leading BIN (451460) is bare digits
+      // and would otherwise be read as the credit limit.
+      const n = numsIn(L[ci + 1].replace(/\d{4,6}\*+\d{4}/, " "));
+      if (n.length) out.creditLimit = n[0];
+    }
+    if (!out.card4) {
+      const c = find(/^Card No:/i);
+      if (c) out.card4 = (c.match(/\*+(\d{4})\b/) || [])[1];
+    }
+  }
+
+  // Nothing usable? Say so, rather than returning a hollow record.
+  if (out.totalDue === undefined && !out.statementDate) return null;
+  return out;
+}
