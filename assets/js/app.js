@@ -763,12 +763,15 @@ function emptyState() {
 }
 
 // ---------- Expenses list ----------
-let expFilter = { q: "", month: "", card: "", cat: "", merchant: "" };
+let expFilter = { q: "", month: "", card: "", cat: "", merchant: "", trip: "" };
 let expPage = 0;
 const EXP_PAGE = 200; // render at most this many expense rows at once (perf)
 function renderExpenses() {
   const cards = [...new Set(expenses.map((e) => e.card).filter(Boolean))].sort();
   const months = [...new Set(expenses.map((e) => e.date.slice(0, 7)))].sort().reverse();
+  // Trips come from the rows themselves, so the filter only ever offers trips
+  // that actually have spend against them.
+  const trips = [...new Set(expenses.map((e) => e.trip).filter(Boolean))].sort();
 
   // Category & merchant facets with counts, ordered by frequency (desc).
   const countBy = (fn) => {
@@ -785,6 +788,9 @@ function renderExpenses() {
     if (expFilter.card && e.card !== expFilter.card) return false;
     if (expFilter.cat && (e.category || "Uncategorized") !== expFilter.cat) return false;
     if (expFilter.merchant && (e.description || "—") !== expFilter.merchant) return false;
+    // "" = every trip, "__none__" = only rows not on a trip.
+    if (expFilter.trip === "__none__" && e.trip) return false;
+    if (expFilter.trip && expFilter.trip !== "__none__" && e.trip !== expFilter.trip) return false;
     return true;
   });
 
@@ -797,6 +803,7 @@ function renderExpenses() {
         <select id="fmonth" class="fsel"><option value="">All months</option>${months.map((m) => `<option value="${m}" ${expFilter.month === m ? "selected" : ""}>${fmtMonth(m)}</option>`).join("")}</select>
         <select id="fcard" class="fsel"><option value="">All cards</option>${cards.map((c) => `<option ${expFilter.card === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
         <select id="fcat" class="fsel"><option value="">All categories</option>${catCounts.map(([c, n]) => `<option value="${esc(c)}" ${expFilter.cat === c ? "selected" : ""}>${esc(c)} (${n})</option>`).join("")}</select>
+        ${trips.length ? `<select id="ftrip" class="fsel" style="max-width:210px"><option value="">All trips</option><option value="__none__" ${expFilter.trip === "__none__" ? "selected" : ""}>Not on a trip</option>${trips.map((t) => `<option value="${esc(t)}" ${expFilter.trip === t ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>` : ""}
         <select id="fmerchant" class="fsel" style="max-width:260px"><option value="">All merchants</option>${merchCounts.map(([m, n]) => `<option value="${esc(m)}" ${expFilter.merchant === m ? "selected" : ""}>${esc(m)} (${n})</option>`).join("")}</select>
         <button class="btn sm secondary" id="fclear">Clear</button>
         <span class="spacer"></span>
@@ -853,7 +860,10 @@ function renderExpenses() {
         if (!added) { renderExpenses(); return; }
         val = added;
       }
-      exp.category = val; exp.updatedAt = Date.now(); await putExpense(exp); scheduleSync();
+      // Flag it as your call, not the parser's, so a later re-import & replace
+      // restores it instead of overwriting it with a fresh guess.
+      exp.category = val; exp.categoryEdited = true;
+      exp.updatedAt = Date.now(); await putExpense(exp); scheduleSync();
       renderExpenses(); // full re-render so the new category shows everywhere
       toast("Category updated", "ok");
     }));
@@ -868,10 +878,11 @@ function renderExpenses() {
   };
 
   $("#fq").addEventListener("input", (e) => { expFilter.q = e.target.value; expPage = 0; debouncedExp(paintExp); });
-  ["fmonth", "fcard", "fcat", "fmerchant"].forEach((id) => $("#" + id).addEventListener("change", (e) => {
+  // ftrip only exists once something is tagged with a trip, hence the ?.
+  ["fmonth", "fcard", "fcat", "fmerchant", "ftrip"].forEach((id) => $("#" + id)?.addEventListener("change", (e) => {
     expFilter[id.slice(1)] = e.target.value; expPage = 0; paintExp();
   }));
-  $("#fclear").addEventListener("click", () => { expFilter = { q: "", month: "", card: "", cat: "", merchant: "" }; expPage = 0; renderExpenses(); });
+  $("#fclear").addEventListener("click", () => { expFilter = { q: "", month: "", card: "", cat: "", merchant: "", trip: "" }; expPage = 0; renderExpenses(); });
   $("#expCsv").addEventListener("click", () => exportCsv(computeFiltered()));
   $("#addTxn").addEventListener("click", () => openAddTxn(cards));
   paintExp();
@@ -1119,7 +1130,7 @@ function renderImport() {
       <div class="row mt"><div class="field" style="align-self:flex-end">
         <button class="btn" id="connectBtn" ${hasClientId ? "" : "disabled"}>Connect Gmail</button>
       </div></div>`}
-      <label class="flex mt" style="gap:6px;cursor:pointer"><input type="checkbox" id="impReplace"> Re-import &amp; replace already-imported transactions <span class="hint">(re-applies the latest parsing/categories; overwrites those statements, including any manual edits on them)</span></label>
+      <label class="flex mt" style="gap:6px;cursor:pointer"><input type="checkbox" id="impReplace"> Re-import &amp; replace already-imported transactions <span class="hint">(re-applies the latest parsing; categories you set by hand and trip assignments are kept)</span></label>
       <label class="flex mt" style="gap:6px;cursor:pointer"><input type="checkbox" id="impDebug"> Show raw statement text (debug — helps me fix parsing, e.g. missing cashback)</label>
       <div id="importLog" class="mt"></div>
     </div>
@@ -1484,7 +1495,7 @@ function paintReview() {
     </div>
     ${reviewFetchedAt && Date.now() - reviewFetchedAt > 60000
       ? `<div class="hint mt">Unsaved fetch from ${esc(fmtDateTime(reviewFetchedAt))} — still here, nothing has been saved yet.</div>` : ""}
-    ${reviewReplace ? `<div class="warnbox mt">Replace mode: saving will overwrite existing transactions from these statements with the freshly-parsed versions.</div>` : (dupCount ? `<div class="hint mt">${dupCount} already-imported transaction(s) hidden.</div>` : "")}
+    ${reviewReplace ? `<div class="warnbox mt">Replace mode: saving overwrites the existing transactions from these statements with the freshly-parsed versions. Categories you set by hand and trip assignments are carried across.</div>` : (dupCount ? `<div class="hint mt">${dupCount} already-imported transaction(s) hidden.</div>` : "")}
     ${problems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("")}
     <div class="flex mt filters">
       <input id="revSearch" placeholder="Search description / card…" value="${esc(revFilter.q)}" style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)">
@@ -1638,10 +1649,23 @@ async function saveReview() {
   // we're re-importing, then insert the fresh ones. Scoped by Gmail message id
   // so only the re-fetched statements are touched (manual/recurring rows and
   // other statements are left alone).
-  let removed = 0;
+  let removed = 0, carried = 0;
   if (reviewReplace) {
     const msgIds = new Set(toSave.map((e) => e.gmailMessageId).filter(Boolean));
     const stale = expenses.filter((e) => e.gmailMessageId && msgIds.has(e.gmailMessageId));
+    // Carry your own work across the replace. Re-importing is for picking up
+    // better parsing, not for discarding the hours spent categorising — which
+    // is what made it unusable on real history. Matched by dedupe key, so a row
+    // whose date, amount, description and card are unchanged keeps:
+    //   - the trip it was assigned (a statement can never tell us this), and
+    //   - a category you set by hand, which the fresh guess must not overwrite.
+    const prior = new Map(stale.map((e) => [e.dedupeKey, e]));
+    for (const e of toSave) {
+      const was = prior.get(e.dedupeKey);
+      if (!was) continue;
+      if (was.trip) { e.trip = was.trip; carried++; }
+      if (was.categoryEdited) { e.category = was.category; e.categoryEdited = true; carried++; }
+    }
     for (const e of stale) { await deleteExpense(e.id); await recordDeletion(e.id); }
     removed = stale.length;
   }
@@ -1651,7 +1675,7 @@ async function saveReview() {
   await commitReviewCursors(); // only now is it safe to skip these emails
   scheduleSync();
   toast(reviewReplace
-    ? `Replaced ${removed} with ${toSave.length} transaction(s) ✓`
+    ? `Replaced ${removed} with ${toSave.length} transaction(s) ✓${carried ? ` · kept ${carried} of your edits` : ""}`
     : `Imported ${toSave.length} transaction(s) ✓`, "ok");
   reviewReplace = false;
   // The review is done — don't restore it next time the Import tab opens.
