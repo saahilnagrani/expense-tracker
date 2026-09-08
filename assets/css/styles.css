@@ -278,6 +278,14 @@ td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; }
 }
 
 /* ---- Dues: statement totals --------------------------------------------- */
+/* Refresh row: label, window, button. The explanatory line is the first thing
+   to go when there is no room for it. */
+.dues-refresh { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dues-refresh label { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+.dues-refresh .fsel { max-width: 150px; }
+.only-wide { display: none; }
+@media (min-width: 900px) { .only-wide { display: inline; } }
+
 /* Total on the left, order picker on the right; they stack on a phone rather
    than squeezing the segmented control against the amount. */
 .dues-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
