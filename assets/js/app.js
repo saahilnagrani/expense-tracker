@@ -11,7 +11,7 @@ import { toBase, fmt, fmtBase } from "./currency.js";
 import * as GM from "./gmail.js";
 import { extractText, PdfPasswordError } from "./pdf.js";
 import {
-  parseStatementByBank, guessCategory, dedupeKey, linkFeesToPurchases, parseAlertEmail, tidyMerchant,
+  parseStatementByBank, guessCategory, dedupeKey, linkFeesToPurchases, parseAlertEmail, tidyMerchant, cleanMerchant,
   parseStatementSummary,
 } from "./parsers.js";
 import { esc } from "./dashboard.js";
@@ -124,18 +124,32 @@ async function migrateSourceLabels() {
 // distinguishable from Swiggy food delivery by its "DEPT STORES" tail.
 const catText = (e) => (e && (e.rawDescription || e.description)) || "";
 
-// Rows imported before merchant names were tidied still carry the acquirer's
-// ",<CITY> <CATEGORY>" tail in their description, which is what the merchant
-// filter lists. Rewrite them once: the full text moves to rawDescription (so
-// category rules keep working) and the dedupe key is recomputed, since the
-// description feeds it and a stale key would let a re-import duplicate the row.
+// Bring stored descriptions in line with what the parser produces today, so a
+// re-import recognises its own rows instead of saving them a second time. Two
+// changes have moved that line: merchant names lost the acquirer's
+// ",<CITY> <CATEGORY>" tail, and the reference strip widened to take a
+// hyphenated tail with it ("CASHBACK CREDIT-REF 162775-0108"). The dedupe key
+// is recomputed because the description feeds it.
+// The old strip removed a reference's digits only, so a hyphenated tail was
+// left stranded: "CASHBACK CREDIT-REF 162775-0108" was stored as "CASHBACK
+// CREDIT-REF -0108". Those digits are gone from the stored row, so re-running
+// the parser cannot recover them — the orphan has to be cut here. Migration
+// only, deliberately: nothing the parser produces today ends this way, so
+// putting it in cleanMerchant would be a live rule earning its keep on nothing.
+const deorphanRef = (d) => d.replace(/\s+-\d{2,6}$/, "");
+
 async function migrateMerchantNames() {
-  if (settings.merchantTidyV1) return;
+  if (settings.merchantTidyV2) return;
   const updated = [];
   for (const e of expenses) {
-    const tidy = tidyMerchant(e.description);
-    if (!tidy || tidy === e.description) continue;
-    const n = { ...e, description: tidy, rawDescription: e.rawDescription || e.description, updatedAt: Date.now() };
+    // cleanMerchant only for statement rows: their descriptions are what it
+    // produced, so re-running it is a correction. Alert and manual descriptions
+    // never went through it, and rewriting those would break their own dedupe.
+    const desc = e.source === "statement"
+      ? tidyMerchant(deorphanRef(cleanMerchant(e.description)))
+      : tidyMerchant(e.description);
+    if (!desc || desc === e.description) continue;
+    const n = { ...e, description: desc, rawDescription: e.rawDescription || e.description, updatedAt: Date.now() };
     n.dedupeKey = dedupeKey(n);
     updated.push(n);
   }
@@ -145,6 +159,7 @@ async function migrateMerchantNames() {
     scheduleSync();
   }
   settings.merchantTidyV1 = true;
+  settings.merchantTidyV2 = true;
   saveSettings(settings);
 }
 
