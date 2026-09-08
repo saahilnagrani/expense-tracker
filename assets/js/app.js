@@ -2,6 +2,7 @@
 import {
   allExpenses, putExpense, putMany, deleteExpense, clearAll,
   existingDedupeKeys, loadSettings, saveSettings, uid, recordDeletion, getTombstones,
+  allStatements, putStatements,
   getMeta, setMeta,
 } from "./db.js";
 import { syncNow, markPrefsChanged, lastSyncedAt } from "./sync.js";
@@ -11,6 +12,7 @@ import * as GM from "./gmail.js";
 import { extractText, PdfPasswordError } from "./pdf.js";
 import {
   parseStatementByBank, guessCategory, dedupeKey, linkFeesToPurchases, parseAlertEmail,
+  parseStatementSummary,
 } from "./parsers.js";
 import { esc } from "./dashboard.js";
 import { initSelectEnhancer } from "./selects.js";
@@ -193,6 +195,7 @@ async function boot() {
   // visit we never counted is exactly the visit worth counting.
   if (IS_DEMO) { loadDemoAnalytics(); await seedDemoIfNeeded(); renderDemoBanner(); }
   expenses = await allExpenses();
+  statements = await allStatements();
   await loadAlertState();
   await restorePendingReview(); // an unsaved fetch survives a reload
   await recoverRecurringTemplates();
@@ -256,7 +259,7 @@ function go(view, { keepScroll = false } = {}) {
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
   location.hash = view;
   const fn = ({ dashboard: renderDashboard, expenses: renderExpenses,
-    add: renderAdd, import: renderImport, settings: renderSettings })[view] || renderDashboard;
+    add: renderAdd, import: renderImport, cards: renderCards, settings: renderSettings })[view] || renderDashboard;
   fn();
   if (!keepScroll) { window.scrollTo(0, 0); return; }
   // Replacing the view collapses the page height for an instant, so the
@@ -1396,6 +1399,19 @@ async function fetchAndParse(range = { mode: "new" }) {
           const { lines } = await extractText(bytes, spec.password || "");
           if (debug) debugRaw.push({ label: spec.cardLabel, filename: att.filename, lines });
           stats.pdfs++;
+          // The header block — total due, minimum, dates, card last 4 — which
+          // the transaction parser only ever skipped. Saved as we go rather
+          // than with the review: a statement is a document that exists in
+          // your mailbox, not a transaction you might decide to discard.
+          const summary = parseStatementSummary(src.bank, lines);
+          if (summary && summary.statementDate) {
+            foundStatements.push({
+              ...summary,
+              id: `${src.bank}|${summary.card4 || "?"}|${summary.statementDate}`,
+              card: spec.cardLabel, owner: spec.owner,
+              currency: src.currency, updatedAt: Date.now(),
+            });
+          }
           rows.push(...parseStatementByBank(src.bank, lines, { currency: src.currency, card: spec.cardLabel }));
         } catch (err) {
           if (err instanceof PdfPasswordError) {
@@ -1433,6 +1449,7 @@ async function fetchAndParse(range = { mode: "new" }) {
     }
   }
 
+  const foundStatements = [];
   _importing = true;
   await keepAwake();
   try {
@@ -1464,6 +1481,12 @@ async function fetchAndParse(range = { mode: "new" }) {
     await releaseAwake();
   }
 
+  if (foundStatements.length) {
+    await putStatements(foundStatements);
+    statements = await allStatements();
+    scheduleSync();
+  }
+
   setLog("");
   renderReview(parsed, problems, stats);
   if (debug && debugRaw.length) {
@@ -1476,6 +1499,7 @@ async function fetchAndParse(range = { mode: "new" }) {
   }
 }
 
+let statements = [];
 let reviewRows = [];
 let revFilter = { q: "", source: "", needsOnly: false, cat: "", merchant: "" };
 let reviewReplace = false; // "re-import & replace" mode chosen for this run
@@ -1791,6 +1815,75 @@ async function saveReview() {
   // The review is done — don't restore it next time the Import tab opens.
   clearPendingReview();
   go("expenses");
+}
+
+
+// ---------- Cards: what each statement said was due ----------
+// A record of statements, not a live balance: the app has no connection to any
+// bank, so every figure here is "as of" the statement it came from. Spend and
+// payments since are not in it, and saying so beside the number is the whole
+// difference between useful and misleading.
+function renderCards() {
+  // Group by card label, newest statement first, so a reissued card stays one
+  // row with its number changing down the history.
+  const byCard = new Map();
+  for (const st of statements) {
+    const k = st.card || "—";
+    if (!byCard.has(k)) byCard.set(k, []);
+    byCard.get(k).push(st);
+  }
+  for (const list of byCard.values()) list.sort((a, b) => (a.statementDate < b.statementDate ? 1 : -1));
+
+  const cards = [...byCard.entries()].map(([card, list]) => ({ card, latest: list[0], history: list.slice(1) }))
+    // Soonest due first: the only order that answers "what needs paying next".
+    .sort((a, b) => (a.latest.dueDate || "9999") < (b.latest.dueDate || "9999") ? -1 : 1);
+
+  if (!cards.length) {
+    views.innerHTML = `<div class="card empty">
+      <div class="big">${icon("wallet", 40)}</div>
+      <h3>No statements read yet</h3>
+      <p>Statement totals are picked up when you import. Run a fetch on the <a href="#import" id="toImp">Import</a> tab and they'll appear here.</p>
+    </div>`;
+    $("#toImp")?.addEventListener("click", (e) => { e.preventDefault(); go("import"); });
+    return;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const dueIn = (d) => Math.round((new Date(d) - new Date(today)) / 86400000);
+  const total = cards.reduce((a, c) => a + (toBase(c.latest.totalDue || 0, c.latest.currency || settings.baseCurrency, settings) || 0), 0);
+
+  const money = (v, cur) => v === undefined ? "—" : fmt(v, cur || settings.baseCurrency);
+  const stRow = (st) => `<div class="st-row">
+    <span class="meta">${fmtDate(st.statementDate)}${st.card4 ? ` · ···${esc(st.card4)}` : ""}</span>
+    <span class="meta st-amt">${money(st.totalDue, st.currency)}</span>
+  </div>`;
+
+  const cardHtml = ({ card, latest, history }) => {
+    const days = latest.dueDate ? dueIn(latest.dueDate) : null;
+    // Date arithmetic off the statement — NOT a claim that it is unpaid, which
+    // the app cannot know. Amber marks a date coming up in the next week only:
+    // a due date long past almost certainly was paid, and colouring it would be
+    // the closest thing to the payment status we deliberately don't infer.
+    const due = latest.dueDate
+      ? `<span class="${days !== null && days >= 0 && days <= 7 ? "due-soon" : "hint"}">pay by ${fmtDate(latest.dueDate)}${days !== null && days >= 0 && days <= 14 ? ` · ${days}d` : ""}</span>`
+      : `<span class="hint">no due date on the statement</span>`;
+    const settled = latest.closingBalance === 0 && latest.totalDue > 0;
+    return `<div class="ccard">
+      <div class="cc-r1"><span class="cc-nm">${esc(card)}</span>${latest.card4 ? `<span class="cc-l4">···${esc(latest.card4)}</span>` : ""}</div>
+      <div class="cc-r1"><span class="cc-amt">${money(latest.totalDue, latest.currency)}</span>${due}</div>
+      <div class="meta">Statement ${fmtDate(latest.statementDate)}${latest.minDue !== undefined ? ` · min ${money(latest.minDue, latest.currency)}` : ""}${settled ? ` · <b>settled by autopay</b>` : ""}</div>
+      ${history.length ? `<details class="cc-more"><summary>${history.length} earlier statement${history.length > 1 ? "s" : ""}</summary>
+        <div class="st-list">${history.map(stRow).join("")}</div></details>` : ""}
+    </div>`;
+  };
+
+  views.innerHTML = `
+    <div class="card">
+      <div class="hint">Total due across ${cards.length} card${cards.length > 1 ? "s" : ""}</div>
+      <div class="cc-total">${fmtBase(total, settings)}</div>
+      <p class="hint mt">As each card's most recent statement — not a live balance. Spend and payments since then aren't counted.</p>
+      <div class="cc-list mt">${cards.map(cardHtml).join("")}</div>
+    </div>`;
 }
 
 // ---------- Settings ----------

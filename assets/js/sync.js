@@ -4,6 +4,8 @@
 //   - Deletions are tracked as tombstones { id: deletedAt }. A tombstone wins
 //     over a record only if it's newer than that record's updatedAt, so an
 //     edit on device B after a delete on device A is preserved.
+//   - Statements (the dues header off each PDF) union by id; they are never
+//     hand-edited, so newest write simply wins.
 //   - Prefs (base currency, FX rates, categories, recurring, the non-secret
 //     household name/label/toggle, and the PDF passwords) sync as one blob
 //     with its own last-write-wins timestamp. The Google Client ID stays local
@@ -15,7 +17,7 @@
 import {
   allExpenses, putMany, clearAll, getTombstones, setTombstones,
   loadSettings, saveSettings, getMeta, setMeta,
-  loadPrefsUpdatedAt, savePrefsUpdatedAt,
+  loadPrefsUpdatedAt, savePrefsUpdatedAt, allStatements, putStatements,
 } from "./db.js";
 import * as Drive from "./drive.js";
 
@@ -26,6 +28,7 @@ export async function syncNow() {
   const remote = file ? await Drive.readFile(file.id) : { ...EMPTY };
 
   const localExpenses = await allExpenses();
+  const localStatements = await allStatements();
   const localDeleted = await getTombstones();
   const settings = loadSettings();
 
@@ -47,6 +50,18 @@ export async function syncNow() {
     if (rec && ts >= (rec.updatedAt || 0)) map.delete(id);
   }
   const merged = [...map.values()];
+
+  // Statements union by id ("<bank>|<card4>|<date>"), newest write winning.
+  // They are facts about documents, never edited by hand, so there is nothing
+  // to lose in a conflict — but a device that imported a month the other
+  // hasn't must not have those statements dropped.
+  const stMap = new Map();
+  for (const st of [...(remote.statements || []), ...localStatements]) {
+    if (!st || !st.id) continue;
+    const prev = stMap.get(st.id);
+    if (!prev || (st.updatedAt || 0) >= (prev.updatedAt || 0)) stMap.set(st.id, st);
+  }
+  const mergedStatements = [...stMap.values()];
 
   // --- merge recurring templates by id (union), never let an empty list on
   // one device wipe the templates on another. Deleted templates are tombstoned
@@ -94,6 +109,7 @@ export async function syncNow() {
   await clearAll();
   await putMany(merged);
   await setTombstones(deleted);
+  await putStatements(mergedStatements);
   let outPrefs = prefs ? { ...prefs, recurring: mergedRecurring, trips: mergedTrips } : null;
   if (prefs) {
     const s = loadSettings();
@@ -130,7 +146,7 @@ export async function syncNow() {
 
   // --- push merged result up to Drive (with the unioned recurring list) ---
   const payload = { version: 1, updatedAt: Date.now(), expenses: merged, deleted,
-    prefs: outPrefs, prefsUpdatedAt };
+    statements: mergedStatements, prefs: outPrefs, prefsUpdatedAt };
   await Drive.writeFile(payload, file && file.id);
 
   const at = Date.now();

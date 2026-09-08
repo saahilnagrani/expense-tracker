@@ -4,9 +4,10 @@
 import { SETTINGS_KEY, defaultSettings, IS_DEMO } from "./config.js";
 
 const DB_NAME = IS_DEMO ? "expense-tracker-demo" : "expense-tracker";
-const DB_VERSION = 1;
+const DB_VERSION = 2;   // 2 adds the statements store
 const STORE = "expenses";
 const META = "meta"; // imported message ids, sync info
+const STMT = "statements"; // one record per statement: dues, dates, card last 4
 
 let _db = null;
 
@@ -20,8 +21,12 @@ function createStores(db) {
   if (!db.objectStoreNames.contains(META)) {
     db.createObjectStore(META, { keyPath: "key" });
   }
+  if (!db.objectStoreNames.contains(STMT)) {
+    db.createObjectStore(STMT, { keyPath: "id" });
+  }
 }
-const hasStores = (db) => db.objectStoreNames.contains(STORE) && db.objectStoreNames.contains(META);
+const hasStores = (db) => db.objectStoreNames.contains(STORE)
+  && db.objectStoreNames.contains(META) && db.objectStoreNames.contains(STMT);
 
 function openDB() {
   if (_db) return Promise.resolve(_db);
@@ -179,4 +184,25 @@ export async function recordDeletion(id) {
 export function uid() {
   return (crypto.randomUUID && crypto.randomUUID()) ||
     "x" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// ---- Statements ----
+// One record per statement, keyed "<bank>|<card4>|<statementDate>" so
+// re-importing the same statement updates it rather than duplicating it.
+export async function allStatements() {
+  const os = await tx(STMT);
+  return new Promise((resolve) => {
+    const req = os.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => resolve([]);
+  });
+}
+export async function putStatements(list) {
+  if (!list || !list.length) return;
+  const os = await tx(STMT, "readwrite");
+  return new Promise((resolve, reject) => {
+    for (const r of list) os.put(r);
+    os.transaction.oncomplete = () => resolve();
+    os.transaction.onerror = () => reject(os.transaction.error);
+  });
 }
