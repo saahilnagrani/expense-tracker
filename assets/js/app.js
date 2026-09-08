@@ -1916,15 +1916,27 @@ async function saveReview() {
 // one you want when paying bills; A-Z is the one you want when looking for a
 // particular card, which is the harder of the two once there are several.
 const DUES_SORTS = [["due", "Next due"], ["name", "A–Z"]];
-function sortDues(cards, mode) {
+function sortDues(cards, mode, today) {
   const byName = (a, b) => a.card.localeCompare(b.card, undefined, { sensitivity: "base" });
   if (mode === "name") return cards.sort(byName);
-  // A card with no due date on its statement has nothing to sort by, so it
-  // goes last rather than pretending to be urgent; ties fall back to the name
-  // so the order is stable instead of depending on read order.
+  // "Next due" is relative to today, not simply the earliest date on file. A
+  // date that has already gone by is not next: either the bill was paid or the
+  // card stopped sending statements, and either way it has nothing to say
+  // about what to pay now. Sorting those first — which a plain ascending sort
+  // does, because a past date is the smallest — put the stalest card on top.
+  //
+  //   0  due today or later, soonest first     — what you came here for
+  //   1  already past, most recent first       — the further back, the less it says
+  //   2  no due date on the statement          — nothing to sort by at all
+  const rank = (c) => (!c.latest.dueDate ? 2 : c.latest.dueDate >= today ? 0 : 1);
   return cards.sort((a, b) => {
-    const ad = a.latest.dueDate || "9999-99-99", bd = b.latest.dueDate || "9999-99-99";
-    return ad === bd ? byName(a, b) : (ad < bd ? -1 : 1);
+    const ra = rank(a), rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    const ad = a.latest.dueDate || "", bd = b.latest.dueDate || "";
+    // Ties fall back to the name so the order is stable rather than depending
+    // on the order the statements happened to be read in.
+    if (ad === bd) return byName(a, b);
+    return ra === 0 ? (ad < bd ? -1 : 1) : (ad > bd ? -1 : 1);
   });
 }
 
@@ -1939,9 +1951,10 @@ function renderDues() {
   }
   for (const list of byCard.values()) list.sort((a, b) => (a.statementDate < b.statementDate ? 1 : -1));
 
+  const today = new Date().toISOString().slice(0, 10);
   const sort = DUES_SORTS.some(([id]) => id === settings.duesSort) ? settings.duesSort : "due";
   const cards = sortDues(
-    [...byCard.entries()].map(([card, list]) => ({ card, latest: list[0], history: list.slice(1) })), sort);
+    [...byCard.entries()].map(([card, list]) => ({ card, latest: list[0], history: list.slice(1) })), sort, today);
 
   if (!cards.length) {
     views.innerHTML = `<div class="card empty">
@@ -1953,7 +1966,6 @@ function renderDues() {
     return;
   }
 
-  const today = new Date().toISOString().slice(0, 10);
   const dueIn = (d) => Math.round((new Date(d) - new Date(today)) / 86400000);
   const total = cards.reduce((a, c) => a + (toBase(c.latest.totalDue || 0, c.latest.currency || settings.baseCurrency, settings) || 0), 0);
 
