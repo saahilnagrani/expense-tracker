@@ -180,11 +180,11 @@ export const SOURCES = [
   //     transfer or card spend, so there is no PDF to open. The `from`
   //     addresses below are the common ones and are easy to correct in place:
   //     the Import tab shows the exact Gmail query each source runs. ---
-  { bank: "icici-alert", label: "ICICI Bank alerts", kind: "alert", default: false, acct: true,
+  { bank: "icici-alert", label: "ICICI Bank", kind: "alert", default: false, acct: true,
     currency: "INR", alert: { from: "customercare@icicibank.com OR credit_cards@icicibank.com", query: "" } },
-  { bank: "sbi-alert", label: "SBI alerts", kind: "alert", default: false, acct: true,
+  { bank: "sbi-alert", label: "SBI", kind: "alert", default: false, acct: true,
     currency: "INR", alert: { from: "alerts.sbi.co.in OR sbicard.com", query: "" } },
-  { bank: "kotak-alert", label: "Kotak alerts", kind: "alert", default: false, acct: true,
+  { bank: "kotak-alert", label: "Kotak", kind: "alert", default: false, acct: true,
     currency: "INR", alert: { from: "kotak.com", query: "" } },
   { bank: "boi-stmt", label: "Bank of India Statement", kind: "statement", default: false, acct: true,
     from: "noreply-estatement@alerts.bankofindia.bank.in", currency: "INR",
