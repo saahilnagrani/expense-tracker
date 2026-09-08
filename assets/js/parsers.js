@@ -248,11 +248,12 @@ export function parseStatementLines(lines, opts = {}) {
     // Drop a second leading date (post date / txn date columns).
     mid = mid.replace(dateHead, "").trim();
     mid = mid.replace(/^[|\-–—:]+/, "").trim();
-    const desc = cleanMerchant(mid);
-    if (!desc || desc.length < 2) continue;
+    const descFull = cleanMerchant(mid);
+    if (!descFull || descFull.length < 2) continue;
+    const desc = tidyMerchant(descFull);
     // Hard-skip statement summary rows (balances, limits, dues) — these are
     // never real transactions even though they start with a date and amount.
-    if (SUMMARY_LINE.test(desc)) continue;
+    if (SUMMARY_LINE.test(descFull)) continue;
 
     const amount = parseFloat(mm[1].replace(/,/g, ""));
     if (!isFinite(amount) || amount === 0) continue;
@@ -262,10 +263,10 @@ export function parseStatementLines(lines, opts = {}) {
     const isCredit = opts.negIsExpense
       ? amount > 0
       : (/CR/i.test(mm[3] || "") || amount < 0 ||
-         /payment received|thank ?you|refund|reversal|cash\s?-?back|reward\s?redemption/i.test(desc));
+         /payment received|thank ?you|refund|reversal|cash\s?-?back|reward\s?redemption/i.test(descFull));
 
     // Lines that are more likely statement summaries than real transactions.
-    const looksNonTxn = /\b(balance|opening|closing|total|sub-?total|available|credit limit|minimum (amount )?due|amount due|payment due|previous|carried forward|brought forward|finance charge)\b/i.test(desc);
+    const looksNonTxn = /\b(balance|opening|closing|total|sub-?total|available|credit limit|minimum (amount )?due|amount due|payment due|previous|carried forward|brought forward|finance charge)\b/i.test(descFull);
 
     // A rough, honest confidence from concrete signals (not a fixed number).
     let confidence = 0.5;
@@ -284,6 +285,8 @@ export function parseStatementLines(lines, opts = {}) {
     out.push({
       date,
       description: desc,
+      // Only when the tidy differs, so most rows carry no extra field.
+      ...(descFull === desc ? {} : { rawDescription: descFull }),
       amount: Math.abs(amount),
       currency: currency,
       kind: isCredit ? "credit" : "expense",
@@ -352,6 +355,8 @@ function cleanWioRow(t) {
     .replace(/[+\-]\s*$/, "")       // trailing +/- left by the signed amount
     .trim();
   const out = { ...t, description, ref: refM ? refM[1] : null };
+  // Keep the rule-facing text in step with the display text.
+  if (t.rawDescription) out.rawDescription = t.rawDescription.replace(/^P\d{6,}\s*/i, "").replace(/[+\-]\s*$/, "").trim();
   if (WIO_CARD_PAYMENT.test(description)) out.category = "Card Payment";
   else if (/foreign exchange/i.test(description)) out.category = "Fees & Interest";
   return out;
@@ -387,6 +392,29 @@ export function cleanMerchant(s) {
     .replace(/\b\w/g, (c) => c) // keep case
     .slice(0, 80)
     .trim();
+}
+
+// Indian card statements print each row as "<MERCHANT>,<CITY> <MERCHANT
+// CATEGORY>" — "MYNTRA DESIGNS PRIVATE L,BANGALORE CLOTH STORES". The tail is
+// the acquirer's classification, not part of the name, and it made the merchant
+// filter unreadable (every Amazon charge a distinct "merchant"). Strip it for
+// display; the full string is kept on the record as `rawDescription` because
+// several category rules read that classification text (Swiggy Instamart is
+// only distinguishable from Swiggy food by its "DEPT STORES" tail).
+//
+// Only the distinctive shape is touched: a comma with no space after it,
+// followed by two to five ALL-CAPS words. Anything else is left alone.
+const MCC_TAIL = /,(?=[A-Z])(?:[A-Z][A-Z&.'-]{2,}\s+){1,4}[A-Z][A-Z&.'-]{2,}\s*$/;
+// Payment-gateway and truncated-suffix noise left at the end of the name:
+// "AMAZON INDIA CYBS SI", "NETFLIX DI SI", "MYNTRA DESIGNS PRIVATE L".
+const GATEWAY_TAIL = /(?:\s+(?:CYBS|[A-Z]{1,2}))+$/;
+
+export function tidyMerchant(s) {
+  let out = String(s || "").replace(MCC_TAIL, "").trim();
+  // Never strip so much that nothing recognisable is left.
+  const stripped = out.replace(GATEWAY_TAIL, "").trim();
+  if (stripped.length >= 4) out = stripped;
+  return out || String(s || "").trim();
 }
 
 // A stable key used to avoid importing the same transaction twice across runs.

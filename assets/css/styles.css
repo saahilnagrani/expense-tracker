@@ -244,19 +244,34 @@ td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .filters-panel { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .filters-panel .fsel { flex: 1; min-width: 150px; }
+/* A filter that happens to be a checkbox still sits on the panel's grid line. */
+.filters-panel .fpanel-chk { flex: 1; min-width: 150px; align-items: center; }
 .panel-foot { display: flex; gap: 8px; align-items: center; }
+/* A checkbox with a wrapping label. In a flex row the label text is a single
+   anonymous item that cannot break, so it moves to the next line whole and
+   strands the box on a line of its own. A two-column grid keeps the box beside
+   the first line and lets the text wrap under itself. */
+.chk { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px;
+  align-items: start; cursor: pointer; }
+.chk > input[type="checkbox"] { margin: 3px 0 0; }
+.chk .hint { display: block; margin-top: 2px; }
+
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
-/* Wide: everything on show, so the toggles have nothing to do. */
-#fToggle, .only-narrow { display: none; }
+/* Wide: everything on show, so the toggles have nothing to do.
+   The class is doubled to raise specificity above the component rules that set
+   a display of their own (.btn is declared later in this file at the same
+   specificity, so a single class silently lost and "Show N" stayed visible). */
+.f-toggle.f-toggle, .only-narrow.only-narrow { display: none; }
 @media (max-width: 640px) {
-  #fToggle { display: inline-flex; }
-  .only-narrow { display: inline-flex; }
-  /* Collapsed by default; the button opens them. */
-  #views:not(.filters-open) .filters-panel { display: none; }
-  #views:not(.more-open) .in-more { display: none; }
+  .f-toggle.f-toggle { display: inline-flex; }
+  .only-narrow.only-narrow { display: inline-flex; }
+  /* Collapsed by default; the button opens them. Scoped to the host card so
+     the Expenses and Review toolbars keep their own open/closed state. */
+  .fbar-host:not(.filters-open) .filters-panel { display: none; }
+  .fbar-host:not(.more-open) .in-more { display: none; }
   .filters-panel { flex-direction: column; }
   .filters-panel .fsel { width: 100%; max-width: none; }
   .panel-foot > .btn { flex: 1; }

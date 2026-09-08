@@ -11,7 +11,7 @@ import { toBase, fmt, fmtBase } from "./currency.js";
 import * as GM from "./gmail.js";
 import { extractText, PdfPasswordError } from "./pdf.js";
 import {
-  parseStatementByBank, guessCategory, dedupeKey, linkFeesToPurchases, parseAlertEmail,
+  parseStatementByBank, guessCategory, dedupeKey, linkFeesToPurchases, parseAlertEmail, tidyMerchant,
   parseStatementSummary,
 } from "./parsers.js";
 import { esc } from "./dashboard.js";
@@ -118,6 +118,36 @@ async function migrateSourceLabels() {
   saveSettings(settings);
 }
 
+// What the category rules should read. `description` is the tidied merchant
+// shown in the UI; `rawDescription` (when present) still carries the acquirer's
+// classification text, which several rules depend on — Swiggy Instamart is only
+// distinguishable from Swiggy food delivery by its "DEPT STORES" tail.
+const catText = (e) => (e && (e.rawDescription || e.description)) || "";
+
+// Rows imported before merchant names were tidied still carry the acquirer's
+// ",<CITY> <CATEGORY>" tail in their description, which is what the merchant
+// filter lists. Rewrite them once: the full text moves to rawDescription (so
+// category rules keep working) and the dedupe key is recomputed, since the
+// description feeds it and a stale key would let a re-import duplicate the row.
+async function migrateMerchantNames() {
+  if (settings.merchantTidyV1) return;
+  const updated = [];
+  for (const e of expenses) {
+    const tidy = tidyMerchant(e.description);
+    if (!tidy || tidy === e.description) continue;
+    const n = { ...e, description: tidy, rawDescription: e.rawDescription || e.description, updatedAt: Date.now() };
+    n.dedupeKey = dedupeKey(n);
+    updated.push(n);
+  }
+  if (updated.length) {
+    await putMany(updated);
+    expenses = await allExpenses();
+    scheduleSync();
+  }
+  settings.merchantTidyV1 = true;
+  saveSettings(settings);
+}
+
 const SPOUSE_SUFFIX = "@spouse";
 const srcKey = (bank, who) => (who === "spouse" ? bank + SPOUSE_SUFFIX : bank);
 const isEnabled = (src, who) => settings.enabledSources.includes(srcKey(src.bank, who));
@@ -204,6 +234,7 @@ async function boot() {
   migrateCategoryList();
   migrateEnabledSources();
   await migrateSourceLabels();
+  await migrateMerchantNames();
   updateBasePill();
   hydrateIcons();
   initSelectEnhancer();
@@ -277,7 +308,7 @@ function updateBasePill() {
 async function migrateRefundCategory() {
   const refs = expenses.filter((e) => e.category === "Refund");
   if (!refs.length && !(settings.categories || []).includes("Refund")) return;
-  for (const e of refs) { e.category = guessCategory(e.description) || ""; e.updatedAt = Date.now(); }
+  for (const e of refs) { e.category = guessCategory(catText(e)) || ""; e.updatedAt = Date.now(); }
   if (refs.length) { await putMany(refs); expenses = await allExpenses(); }
   if ((settings.categories || []).includes("Refund")) {
     settings.categories = settings.categories.filter((c) => c !== "Refund");
@@ -330,7 +361,7 @@ async function reapplyFeeAttribution() {
 // touching anything. A rule only overrides where it actually matches, so a
 // manual category on a merchant no rule covers is left alone.
 function recheckCategories() {
-  const clones = expenses.map((e) => ({ ...e, category: guessCategory(e.description) || e.category }));
+  const clones = expenses.map((e) => ({ ...e, category: guessCategory(catText(e)) || e.category }));
   linkFeesToPurchases(clones, settings.attributeFees !== false, { flag: false });
   const changes = [];
   for (let i = 0; i < clones.length; i++) {
@@ -425,7 +456,7 @@ async function materializeRecurring() {
           id: `recur_${t.id}_${mk}`, date: `${mk}-${String(day).padStart(2, "0")}`,
           description: t.description, amount: Math.abs(Number(t.amount) || 0),
           currency: t.currency || settings.baseCurrency,
-          category: t.category || guessCategory(t.description) || "Other",
+          category: t.category || guessCategory(catText(t)) || "Other",
           card: t.paidVia || "Recurring", kind: "expense", source: "recurring",
           recurringId: t.id, createdAt: new Date().toISOString(), updatedAt: Date.now(),
           dedupeKey: `recurring|${t.id}|${mk}`,
@@ -834,13 +865,13 @@ function renderExpenses() {
   // Shell (filters) is rendered once; only the table body/count/pager repaint
   // on search/filter, so the search input keeps focus while you type.
   views.innerHTML = `
-    <div class="card">
+    <div class="card fbar-host" id="expHost">
       <div class="exp-bar">
         <input id="fq" placeholder="Search merchant / card…" value="${esc(expFilter.q)}">
         <button class="btn sm" id="addTxn">${icon("plus",15)} Add</button>
       </div>
       <div class="exp-bar2">
-        <button type="button" class="fbtn" id="fToggle" aria-expanded="false">Filters<span class="fcount" id="fCount" hidden>0</span></button>
+        <button type="button" class="fbtn f-toggle" id="fToggle" aria-expanded="false">Filters<span class="fcount" id="fCount" hidden>0</span></button>
         <span class="spacer"></span>
         <button type="button" class="fbtn only-narrow" id="expMore" aria-label="More actions" aria-expanded="false">···</button>
         <button class="btn sm secondary in-more" id="assignTrip">Trip…</button>
@@ -962,16 +993,17 @@ function renderExpenses() {
     }));
   }
 
+  const expHost = $("#expHost");
   $("#fToggle").addEventListener("click", () => {
-    const open = views.classList.toggle("filters-open");
+    const open = expHost.classList.toggle("filters-open");
     $("#fToggle").setAttribute("aria-expanded", String(open));
   });
   $("#fDone")?.addEventListener("click", () => {
-    views.classList.remove("filters-open");
+    expHost.classList.remove("filters-open");
     $("#fToggle").setAttribute("aria-expanded", "false");
   });
   $("#expMore").addEventListener("click", () => {
-    const open = views.classList.toggle("more-open");
+    const open = expHost.classList.toggle("more-open");
     $("#expMore").setAttribute("aria-expanded", String(open));
   });
   $("#fclear").addEventListener("click", () => { expFilter = { q: "", month: "", card: "", cat: "", merchant: "", trip: "" }; expPage = 0; renderExpenses(); });
@@ -1239,8 +1271,8 @@ function renderImport() {
       <div class="row mt"><div class="field" style="align-self:flex-end">
         <button class="btn" id="connectBtn" ${hasClientId ? "" : "disabled"}>Connect Gmail</button>
       </div></div>`}
-      <label class="flex mt" style="gap:6px;cursor:pointer"><input type="checkbox" id="impReplace"> Re-import &amp; replace already-imported transactions <span class="hint">(re-applies the latest parsing; categories you set by hand and trip assignments are kept)</span></label>
-      <label class="flex mt" style="gap:6px;cursor:pointer"><input type="checkbox" id="impDebug"> Show raw statement text (debug — helps me fix parsing, e.g. missing cashback)</label>
+      <label class="chk mt"><input type="checkbox" id="impReplace"><span>Re-import &amp; replace already-imported transactions<span class="hint">Re-applies the latest parsing. Categories you set by hand and trip assignments are kept.</span></span></label>
+      <label class="chk mt"><input type="checkbox" id="impDebug"><span>Show raw statement text<span class="hint">Debug — helps me fix parsing, e.g. missing cashback.</span></span></label>
       <div id="importLog" class="mt"></div>
     </div>
     <div id="reviewArea" class="mt"></div>`;
@@ -1365,7 +1397,7 @@ async function fetchAndParse(range = { mode: "new" }) {
       t.source = "alert"; t.bank = src.bank; t.owner = spec.owner;
       t.card = t.last4 ? `${spec.cardLabel} ••${t.last4}` : spec.cardLabel;
       t.gmailMessageId = ids[i];
-      t.category = t.category || guessCategory(t.description);
+      t.category = t.category || guessCategory(catText(t));
       // One email is one transaction, so the message id is a true natural key —
       // far stronger than hashing the text. A UPI reference is better still: it
       // also catches one payment that generated two different emails.
@@ -1436,7 +1468,7 @@ async function fetchAndParse(range = { mode: "new" }) {
           const nice = fn ? fn.charAt(0).toUpperCase() + fn.slice(1).toLowerCase() : "";
           if (nice) { r.card = `${baseLabel} (${nice})`; r.owner = "spouse"; }
         }
-        r.category = r.category || guessCategory(r.description);
+        r.category = r.category || guessCategory(catText(r));
       }
       // Attribute forex fees + GST to the purchase they were levied on (uses
       // final categories & card labels), unless the user turned this off.
@@ -1618,28 +1650,36 @@ function paintReview() {
   };
   const revCats = facet((r) => r.category || "Uncategorized");
   const revMerch = facet((r) => r.description || "—");
-  area.innerHTML = `<div class="card">
-    <div class="flex">
-      <div class="section-title" style="margin:0">Review imported transactions</div>
-      <span class="spacer"></span>
-      <button class="btn sm secondary" id="revAll">Select shown</button>
-      <button class="btn sm secondary" id="revNone">Clear shown</button>
-      <button class="btn sm secondary" id="revDiscard">Discard</button>
-      <button class="btn" id="revSave">Save selected</button>
-    </div>
+  area.innerHTML = `<div class="card fbar-host" id="revHost">
+    <div class="section-title" style="margin:0 0 12px">Review imported transactions</div>
     ${reviewFetchedAt && Date.now() - reviewFetchedAt > 60000
       ? `<div class="hint mt">Unsaved fetch from ${esc(fmtDateTime(reviewFetchedAt))} — still here, nothing has been saved yet.</div>` : ""}
     ${reviewReplace ? `<div class="warnbox mt">Replace mode: saving overwrites the existing transactions from these statements with the freshly-parsed versions. Categories you set by hand and trip assignments are carried across.</div>` : (dupCount ? `<div class="hint mt">${dupCount} already-imported transaction(s) hidden.</div>` : "")}
     ${problems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("")}
-    <div class="flex mt filters">
-      <input id="revSearch" placeholder="Search description / card…" value="${esc(revFilter.q)}" style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)">
+    <div class="exp-bar mt">
+      <input id="revSearch" placeholder="Search description / card…" value="${esc(revFilter.q)}">
+      <button class="btn sm" id="revSave">Save selected</button>
+    </div>
+    <div class="exp-bar2">
+      <button type="button" class="fbtn f-toggle" id="revToggle" aria-expanded="false">Filters<span class="fcount" id="revFCount" hidden>0</span></button>
+      <span class="spacer"></span>
+      <button type="button" class="fbtn only-narrow" id="revMore" aria-label="More actions" aria-expanded="false">···</button>
+      <button class="btn sm secondary in-more" id="revAll">Select shown</button>
+      <button class="btn sm secondary in-more" id="revNone">Clear shown</button>
+      <button class="btn sm secondary in-more" id="revDiscard">Discard</button>
+    </div>
+    <div class="fchips" id="revChips"></div>
+    <div class="filters-panel" id="revPanel">
       <select id="revSource" class="fsel"><option value="">All sources</option>${sources.map((s) => `<option ${revFilter.source === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
       <select id="revCat" class="fsel"><option value="">All categories</option>${revCats.map(([c, n]) => `<option value="${esc(c)}" ${revFilter.cat === c ? "selected" : ""}>${esc(c)} (${n})</option>`).join("")}</select>
-      <select id="revMerchant" class="fsel" style="max-width:240px"><option value="">All merchants</option>${revMerch.map(([m, n]) => `<option value="${esc(m)}" ${revFilter.merchant === m ? "selected" : ""}>${esc(m)} (${n})</option>`).join("")}</select>
-      <label class="flex" style="gap:6px;cursor:pointer"><input type="checkbox" id="revNeedsOnly" ${revFilter.needsOnly ? "checked" : ""}> Needs review only</label>
-      <span class="spacer"></span>
-      <span class="hint" id="revCounts"></span>
+      <select id="revMerchant" class="fsel"><option value="">All merchants</option>${revMerch.map(([m, n]) => `<option value="${esc(m)}" ${revFilter.merchant === m ? "selected" : ""}>${esc(m)} (${n})</option>`).join("")}</select>
+      <label class="chk fpanel-chk"><input type="checkbox" id="revNeedsOnly" ${revFilter.needsOnly ? "checked" : ""}><span>Needs review only</span></label>
+      <div class="panel-foot">
+        <button class="btn sm secondary" id="revClear">Clear all</button>
+        <button class="btn sm only-narrow" id="revDone">Show</button>
+      </div>
     </div>
+    <div class="hint mt" id="revCounts"></div>
     <div class="table-wrap mt">
       <table class="data tbl-rev">
         <thead><tr>
@@ -1653,6 +1693,23 @@ function paintReview() {
   </div>`;
 
   const reset = () => { revPage = 0; renderRevBody(); persistReview(); };
+  const host = $("#revHost");
+  $("#revToggle").addEventListener("click", () => {
+    const open = host.classList.toggle("filters-open");
+    $("#revToggle").setAttribute("aria-expanded", String(open));
+  });
+  $("#revDone").addEventListener("click", () => {
+    host.classList.remove("filters-open");
+    $("#revToggle").setAttribute("aria-expanded", "false");
+  });
+  $("#revMore").addEventListener("click", () => {
+    const open = host.classList.toggle("more-open");
+    $("#revMore").setAttribute("aria-expanded", String(open));
+  });
+  $("#revClear").addEventListener("click", () => {
+    revFilter = { q: revFilter.q, source: "", cat: "", merchant: "", needsOnly: false };
+    paintReview();
+  });
   // .fsel styled via CSS
   $("#revSearch").addEventListener("input", (e) => { revFilter.q = e.target.value; reset(); });
   $("#revSource").addEventListener("change", (e) => { revFilter.source = e.target.value; reset(); });
@@ -1746,6 +1803,32 @@ function updateRevCounts() {
   const need = reviewRows.filter((r) => r.needsReview).length;
   el.innerHTML = `Showing <b>${shown}</b> of ${total} · <b>${sel}</b> selected` +
     (need ? ` · <span style="color:var(--warn)">${need} need review</span>` : "");
+  paintRevFilterState(shown);
+}
+
+// Same treatment the Expenses toolbar got: what is filtered shows as chips you
+// can dismiss one at a time, so the panel can stay shut without hiding state.
+function paintRevFilterState(shown) {
+  const active = ["source", "cat", "merchant"].filter((k) => revFilter[k]);
+  if (revFilter.needsOnly) active.push("needsOnly");
+  const cnt = $("#revFCount");
+  if (cnt) { cnt.textContent = String(active.length); cnt.hidden = active.length === 0; }
+  const done = $("#revDone");
+  if (done) done.textContent = `Show ${shown}`;
+  const box = $("#revChips");
+  if (!box) return;
+  box.innerHTML = active.map((k) => {
+    const v = k === "needsOnly" ? "Needs review" : revFilter[k];
+    return `<button type="button" class="fchip" data-k="${k}">${esc(v)}<span aria-hidden="true">✕</span><span class="sr-only"> — remove filter</span></button>`;
+  }).join("");
+  $$("#revChips .fchip").forEach((b) => b.addEventListener("click", () => {
+    const k = b.dataset.k;
+    revFilter[k] = k === "needsOnly" ? false : "";
+    const el = { source: "#revSource", cat: "#revCat", merchant: "#revMerchant", needsOnly: "#revNeedsOnly" }[k];
+    const ctl = $(el);
+    if (ctl) { if (k === "needsOnly") ctl.checked = false; else ctl.value = ""; }
+    revPage = 0; renderRevBody(); persistReview();
+  }));
 }
 
 function reviewRowHtml(r, i) {
@@ -1769,8 +1852,9 @@ async function saveReview() {
   const toSave = selected.map((r) => {
     const e = {
       id: uid(), date: r.date, description: r.description,
+      ...(r.rawDescription ? { rawDescription: r.rawDescription } : {}),
       amount: Math.abs(parseFloat(r.amount) || 0), currency: r.currency,
-      category: r.category || guessCategory(r.description), card: r.card,
+      category: r.category || guessCategory(catText(r)), card: r.card,
       kind: r.kind === "credit" ? "credit" : "expense",
       source: r.source, bank: r.bank, gmailMessageId: r.gmailMessageId,
       createdAt: new Date().toISOString(), updatedAt: Date.now(),
@@ -1927,9 +2011,9 @@ function renderSettings() {
         <button class="btn sm secondary" id="recat">Re-categorize uncategorized only</button>
         <span class="hint">${expenses.filter((e) => !e.category).length} uncategorized · fills blank categories only, never changes existing ones</span>
       </div>
-      <label class="flex mt" style="gap:8px;cursor:pointer;border-top:1px solid var(--border);padding-top:12px">
+      <label class="chk mt" style="border-top:1px solid var(--border);padding-top:12px">
         <input type="checkbox" id="attrFees" ${settings.attributeFees !== false ? "checked" : ""}>
-        <span>Attribute forex fees &amp; GST to the original purchase's category<br><span class="hint">A foreign-currency fee (and its GST) is filed under the purchase it was charged on, instead of Fees &amp; Interest. Ambiguous ones are left in Fees &amp; Interest and flagged for review.</span></span>
+        <span>Attribute forex fees &amp; GST to the original purchase's category<span class="hint">A foreign-currency fee (and its GST) is filed under the purchase it was charged on, instead of Fees &amp; Interest. Ambiguous ones are left in Fees &amp; Interest and flagged for review.</span></span>
       </label>
       <div class="flex mt"><button class="btn sm secondary" id="reFees">Re-file saved forex fees now</button>
         <span class="hint">Applies the above to transactions you've already imported.</span></div>
@@ -1959,7 +2043,7 @@ function renderSettings() {
     <div class="card">
       <div class="section-title">People</div>
       <p class="hint">If a family member's statements are forwarded into this Gmail with a label (yours aren't), import theirs too — tagged with their name so you can filter by person, all in one household total.</p>
-      <label class="flex" style="gap:8px;cursor:pointer;font-weight:600;color:var(--text)"><input type="checkbox" id="spEnabled" ${settings.spouseEnabled ? "checked" : ""}> Also import a second person's cards</label>
+      <label class="chk" style="font-weight:600;color:var(--text)"><input type="checkbox" id="spEnabled" ${settings.spouseEnabled ? "checked" : ""}><span>Also import a second person's cards</span></label>
       <div id="spOpts" class="mt" style="${settings.spouseEnabled ? "" : "display:none"}">
         <div class="row">
           <div class="field"><label>Their name (tag)</label><input id="spName" value="${esc(settings.spouseName)}" placeholder="e.g. Harshita"></div>
@@ -1979,7 +2063,7 @@ function renderSettings() {
         ${GM.isSignedIn()
           ? `<span class="okbox" style="padding:6px 10px">Connected</span><button class="btn" id="syncNow">Sync now</button><button class="btn secondary" id="setDisconnect">Disconnect</button>`
           : `<button class="btn" id="syncConnect" ${settings.googleClientId ? "" : "disabled"}>Connect Google account</button>`}
-        <label class="flex" style="gap:6px;cursor:pointer"><input type="checkbox" id="autoSync" ${settings.autoSync ? "checked" : ""}> Auto-sync on changes</label>
+        <label class="chk"><input type="checkbox" id="autoSync" ${settings.autoSync ? "checked" : ""}><span>Auto-sync on changes</span></label>
       </div>
       <div class="hint mt" id="syncStatus"></div>
       ${!settings.googleClientId ? `<div class="hint mt">Paste your Client ID above — it saves as soon as you leave the box, and the Connect button lights up.</div>` : ""}
@@ -2100,7 +2184,7 @@ function renderSettings() {
     const updated = [];
     for (const e of expenses) {
       if (!e.category) {
-        const g = guessCategory(e.description);
+        const g = guessCategory(catText(e));
         if (g) { e.category = g; e.updatedAt = Date.now(); updated.push(e); }
       }
     }
