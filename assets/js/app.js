@@ -2006,6 +2006,12 @@ function renderDues() {
   const dueIn = (d) => Math.round((new Date(d) - new Date(today)) / 86400000);
   const total = cards.reduce((a, c) => a + (toBase(c.latest.totalDue || 0, c.latest.currency || settings.baseCurrency, settings) || 0), 0);
 
+  // Built here so the control row can decide whether it has anything to show.
+  const sortSeg = cards.length > 1
+    ? `<div class="seg" role="group" aria-label="Order cards by">${DUES_SORTS.map(([id, label]) =>
+        `<button type="button" class="${sort === id ? "on" : ""}" data-sort="${id}" aria-pressed="${sort === id}">${label}</button>`).join("")}</div>`
+    : "";
+
   const money = (v, cur) => v === undefined ? "—" : fmt(v, cur || settings.baseCurrency);
   const stRow = (st) => `<div class="st-row">
     <span class="meta">${fmtDate(st.statementDate)}${st.card4 ? ` · ···${esc(st.card4)}` : ""}</span>
@@ -2033,28 +2039,21 @@ function renderDues() {
 
   views.innerHTML = `
     <div class="card">
-      <div class="dues-head">
-        <div>
-          <div class="hint">Total due across ${cards.length} card${cards.length > 1 ? "s" : ""}</div>
-          <div class="cc-total">${fmtBase(total, settings)}</div>
-        </div>
-        ${cards.length > 1 ? `<div class="seg" role="group" aria-label="Order cards by">
-          ${DUES_SORTS.map(([id, label]) =>
-            `<button type="button" class="${sort === id ? "on" : ""}" data-sort="${id}" aria-pressed="${sort === id}">${label}</button>`).join("")}
-        </div>` : ""}
+      <div class="hint">Total due across ${cards.length} card${cards.length > 1 ? "s" : ""}</div>
+      <div class="cc-total">${fmtBase(total, settings)}</div>
+      <p class="hint dues-note">As each card's most recent statement — not a live balance. Spend and payments since then aren't counted.</p>
+      ${sortSeg || GM.isSignedIn() ? `<div class="dues-bar">
+        ${sortSeg}
+        <span class="spacer"></span>
+        ${GM.isSignedIn() ? `<select id="duesBack" class="fsel" aria-label="How far back to read statements">${[3, 6, 12, 24].map((m) => `<option value="${m}" ${settings.duesLookbackMonths === m ? "selected" : ""}>Last ${m} months</option>`).join("")}</select>
+        <button class="btn sm secondary" id="duesFetch">Refresh dues</button>` : ""}
       </div>
-      <p class="hint mt">As each card's most recent statement — not a live balance. Spend and payments since then aren't counted.</p>
-      ${GM.isSignedIn() ? `<div class="dues-refresh mt">
-        <label for="duesBack">Read statements from the last</label>
-        <select id="duesBack" class="fsel">${[3, 6, 12, 24].map((m) => `<option value="${m}" ${settings.duesLookbackMonths === m ? "selected" : ""}>${m} months</option>`).join("")}</select>
-        <button class="btn sm secondary" id="duesFetch">Refresh dues</button>
-        <span class="hint only-wide">Reads the statements only — your transactions aren't touched.</span>
-      </div>
+      <p class="hint dues-note only-wide">Refreshing reads the statements only — your transactions aren't touched.</p>
       <div id="duesLog"></div>` : ""}
       <div class="cc-list mt">${cards.map(cardHtml).join("")}</div>
     </div>`;
 
-  $$(".dues-head .seg button").forEach((b) => b.addEventListener("click", () => {
+  $$(".dues-bar .seg button").forEach((b) => b.addEventListener("click", () => {
     settings.duesSort = b.dataset.sort;
     saveSettings(settings);
     renderDues();
