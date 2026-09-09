@@ -892,3 +892,14 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
 }
 .demo-bar .mini:hover { border-color: var(--brand); color: var(--brand); }
 @media (max-width: 640px) { .demo-msg { font-size: 12px; } }
+
+/* ---- Raw statement text (debug) ----------------------------------------- */
+.dbg-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.dbg { margin-top: 10px; }
+.dbg summary { cursor: pointer; }
+.dbg-copy { margin-left: 10px; vertical-align: middle; }
+.dbg-pre {
+  white-space: pre-wrap; max-height: 320px; overflow: auto; margin-top: 8px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px; font-size: 12px;
+}
