@@ -319,8 +319,17 @@ function go(view, { keepScroll = false } = {}) {
   requestAnimationFrame(() => window.scrollTo(0, y));
 }
 
+// index.html loads this module as app.js?v=N, so the module can read the
+// deployed version off its own URL — no second place to remember to bump.
+const APP_VERSION = (() => {
+  try { return new URL(import.meta.url).searchParams.get("v") || "dev"; }
+  catch { return "dev"; }
+})();
+
 function updateBasePill() {
   $("#basePill").textContent = "Base: " + settings.baseCurrency;
+  const ver = $("#verPill");
+  if (ver) ver.textContent = "v" + APP_VERSION;
 }
 
 // One-time cleanup: the short-lived "Refund" category is gone — re-categorize
@@ -1393,6 +1402,7 @@ async function fetchAndParse(range = { mode: "new" }) {
   // intention of replacing.
   reviewReplace = duesOnly ? false : !!$("#impReplace")?.checked;
   const debugRaw = (lastDebugRaw = []);
+  const sourceStats = [];
   const parsed = [];
   const problems = [];
   // Counted so an empty result can explain itself: no emails found is a very
@@ -1448,6 +1458,11 @@ async function fetchAndParse(range = { mode: "new" }) {
     setLog(`Searching ${esc(spec.cardLabel)}…`);
     const ids = await GM.searchMessages(q, 60);
     stats.emails += ids.length;
+    // Per-card tally. A source that finds no mail and a source whose statements
+    // all fail to yield a header are both silent otherwise, and they need very
+    // different fixes.
+    const tally = { label: spec.cardLabel, emails: ids.length, read: 0, query: q };
+    sourceStats.push(tally);
     setLog(`Found ${ids.length} statement email(s) for ${esc(spec.cardLabel)}. Reading…`);
     for (let i = 0; i < ids.length; i++) {
       setLog(`${esc(spec.cardLabel)}: reading statement ${i + 1}/${ids.length}…`);
@@ -1468,6 +1483,7 @@ async function fetchAndParse(range = { mode: "new" }) {
           // your mailbox, not a transaction you might decide to discard.
           const summary = parseStatementSummary(src.bank, lines);
           if (summary && summary.statementDate) {
+            tally.read++;
             foundStatements.push({
               ...summary,
               id: `${src.bank}|${summary.card4 || "?"}|${summary.statementDate}`,
@@ -1557,7 +1573,15 @@ async function fetchAndParse(range = { mode: "new" }) {
     // pending review sitting on the Import tab is left untouched too.
     renderDues();
     const box = $("#duesLog");
-    if (box) box.innerHTML = problems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("");
+    if (box) {
+      const rows = sourceStats.map((t) => {
+        const bad = t.emails === 0 || t.read < t.emails;
+        return `<div class="src-stat${bad ? " bad" : ""}"><span>${esc(t.label)}</span>` +
+          `<span>${t.emails} email${t.emails === 1 ? "" : "s"} · ${t.read} read</span></div>`;
+      }).join("");
+      box.innerHTML = problems.map((p) => `<div class="warnbox mt">${esc(p)}</div>`).join("") +
+        (rows ? `<details class="mt src-stats"><summary>What each card returned</summary>${rows}</details>` : "");
+    }
     const n = foundStatements.length;
     toast(n ? `${n} statement${n > 1 ? "s" : ""} read` : "No statements found in that window", n ? "ok" : "err");
     return;
