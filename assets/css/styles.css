@@ -67,6 +67,9 @@ a { color: var(--brand); }
   margin-left: auto; background: var(--chip); color: var(--muted);
   padding: 6px 12px; border-radius: 999px; font-weight: 600; font-size: 13px;
 }
+/* Which build is actually running. Quieter than the base pill — it is there to
+   be checked, not read. */
+.ver-pill { color: var(--muted); font-size: 11.5px; font-weight: 600; opacity: .7; }
 
 /* Mobile: move the tabs into a fixed bottom icon tray */
 @media (max-width: 640px) {
@@ -903,3 +906,13 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
   background: var(--panel-2); border: 1px solid var(--border);
   border-radius: 8px; padding: 10px; font-size: 12px;
 }
+
+/* Per-card tally after a dues refresh: emails matched vs headers actually read.
+   Amber marks a card that returned nothing, or whose statements did not all
+   yield a header — the two failures that are otherwise completely silent. */
+.src-stats summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 600; }
+.src-stat { display: flex; justify-content: space-between; gap: 12px;
+  padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.src-stat:last-child { border-bottom: 0; }
+.src-stat span:last-child { color: var(--muted); white-space: nowrap; }
+.src-stat.bad span:last-child { color: var(--warn); font-weight: 700; }
