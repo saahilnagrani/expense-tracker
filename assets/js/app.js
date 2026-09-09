@@ -1392,7 +1392,7 @@ async function fetchAndParse(range = { mode: "new" }) {
   // dues refresh must never inherit it — it would delete rows this run has no
   // intention of replacing.
   reviewReplace = duesOnly ? false : !!$("#impReplace")?.checked;
-  const debugRaw = [];
+  const debugRaw = (lastDebugRaw = []);
   const parsed = [];
   const problems = [];
   // Counted so an empty result can explain itself: no emails found is a very
@@ -1564,16 +1564,50 @@ async function fetchAndParse(range = { mode: "new" }) {
   }
   renderReview(parsed, problems, stats);
   if (debug && debugRaw.length) {
-    const block = debugRaw.map((d) =>
-      `<details style="margin-top:10px"><summary style="cursor:pointer">${esc(d.label)} — ${esc(d.filename)} (${d.lines.length} lines)</summary>` +
-      `<pre style="white-space:pre-wrap;max-height:320px;overflow:auto;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:10px;font-size:12px;margin-top:8px">${esc(d.lines.join("\n"))}</pre></details>`
+    const block = debugRaw.map((d, i) =>
+      `<details class="dbg"><summary>${esc(d.label)} — ${esc(d.filename)} (${d.lines.length} lines)` +
+      `<button type="button" class="btn sm secondary dbg-copy" data-i="${i}">Copy</button></summary>` +
+      `<pre class="dbg-pre">${esc(d.lines.join("\n"))}</pre></details>`
     ).join("");
     $("#reviewArea").insertAdjacentHTML("beforeend",
-      `<div class="card mt"><div class="section-title">Raw statement text (debug)</div><p class="hint">Expand a statement and copy the line for anything that's parsing wrong (e.g. cashback) — paste it to me and I'll fix the parser.</p>${block}</div>`);
+      `<div class="card mt">
+        <div class="dbg-head">
+          <div class="section-title" style="margin:0">Raw statement text (debug)</div>
+          <button type="button" class="btn sm secondary" id="dbgCopyAll">Copy all ${debugRaw.length}</button>
+        </div>
+        <p class="hint">Copy a statement and paste it to me and I'll fix the parser. Nothing is sent anywhere by this app — the text goes to your clipboard only.</p>${block}</div>`);
+    $("#dbgCopyAll")?.addEventListener("click", (e) =>
+      copyDebug(e.currentTarget, lastDebugRaw.map(debugBlockText).join("\n\n")));
+    $$(".dbg-copy").forEach((b) => b.addEventListener("click", (e) => {
+      // Inside <summary>, so without this the copy would also toggle the panel.
+      e.preventDefault(); e.stopPropagation();
+      copyDebug(b, debugBlockText(lastDebugRaw[+b.dataset.i]));
+    }));
   }
 }
 
 let statements = [];
+// The raw text of the last debug fetch, kept so the copy buttons can hand over
+// the real string rather than scraping it back out of the escaped markup.
+let lastDebugRaw = [];
+function debugBlockText(d) {
+  return d ? `--- ${d.label} — ${d.filename} (${d.lines.length} lines) ---\n${d.lines.join("\n")}` : "";
+}
+async function copyDebug(btn, text) {
+  const was = btn.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = "Copied";
+  } catch {
+    // Clipboard access can be refused (permission, or a non-secure context).
+    // Select the text instead so a manual copy still works.
+    const pre = btn.closest("details")?.querySelector(".dbg-pre");
+    if (pre) { const r = document.createRange(); r.selectNodeContents(pre); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+    btn.textContent = pre ? "Selected — copy it" : "Couldn't copy";
+  }
+  setTimeout(() => { btn.textContent = was; }, 1600);
+}
+
 let reviewRows = [];
 let revFilter = { q: "", source: "", needsOnly: false, cat: "", merchant: "" };
 let reviewReplace = false; // "re-import & replace" mode chosen for this run
