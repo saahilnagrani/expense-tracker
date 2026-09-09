@@ -669,7 +669,13 @@ export function parseStatementSummary(bank, lines) {
       if (n.length) out.minDue = n[n.length - 1];
     }
     // The summary values line: six figures, the fifth being Total Payment Due.
-    const si = findIdx(/Total Payment Due \(AED\)/i);
+    // The column header is matched without "(AED)" — newer statements print the
+    // currency once in the "STATEMENT SUMMARY (AED)" title above and leave the
+    // column as a bare "Total Payment Due", which is why every statement from
+    // Feb 2025 on read a minimum but no total. "Minimum Payment Due" in the
+    // header block above does not contain this phrase, so the first match is
+    // still the summary row.
+    const si = findIdx(/Total Payment Due/i);
     for (let i = si + 1; si >= 0 && i < Math.min(L.length, si + 4); i++) {
       const n = numsIn(L[i]);
       if (n.length === 6) { out.previousBalance = n[0]; out.totalDue = n[4]; break; }
