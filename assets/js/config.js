@@ -127,7 +127,10 @@ export const SOURCES = [
     fileMatch: "adcbcreditcard",
     passwordHint: "Your ADCB Customer ID (SMS 'CID' to 2626 to retrieve)." },
   { bank: "axis-cc", label: "Axis Credit Card", kind: "statement", default: true,
-    from: "cc.statements@axis.bank.in", currency: "INR",
+    // Axis moved sending domain (axisbank.com -> axis.bank.in) and the older
+    // mail stayed where it was, so statements before the move were invisible
+    // to a single-address search. Both are listed; see fromQuery in app.js.
+    from: "cc.statements@axis.bank.in OR cc.statements@axisbank.com", currency: "INR",
     alert: { from: "alerts@axis.bank.in", query: "" },
     passwordHint: "First 4 letters of name (CAPS) + DOB as DDMM, e.g. CKAJ1102 — or + last 4 digits of the card." },
   { bank: "fab", label: "FAB Credit Card", kind: "statement", default: true,
@@ -146,7 +149,9 @@ export const SOURCES = [
   // --- Bank-account statements (off by default; enable if you want them).
   //     `acct: true` groups them separately from credit cards in Settings. ---
   { bank: "axis-acct", label: "Axis Bank A/c Statement", kind: "statement", default: false, acct: true,
-    from: "statements@axis.bank.in", currency: "INR",
+    // Same domain move as the credit card above. The old address here is
+    // inferred from that pattern rather than seen on a real email.
+    from: "statements@axis.bank.in OR statements@axisbank.com", currency: "INR",
     alert: { from: "alerts@axis.bank.in", query: "" },
     passwordHint: "4 letters of name (CAPS) + 9-digit Customer ID, or + 4-digit DOB (DDMM)." },
   { bank: "hdfc-stmt", label: "HDFC SmartStatement", kind: "statement", default: false, acct: true,
