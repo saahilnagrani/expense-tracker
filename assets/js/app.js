@@ -1453,8 +1453,16 @@ async function fetchAndParse(range = { mode: "new" }) {
   }
 
   // Fetch + parse one owner "spec" for a source.
+  // A source can name more than one sender: banks change sending domain and the
+  // mail already delivered does not move with them. "a OR b" becomes
+  // from:(a OR b) so one search still covers the whole history.
+  const fromQuery = (from) => {
+    const list = String(from || "").split(/\s+OR\s+/i).map((f) => f.trim()).filter(Boolean);
+    return list.length > 1 ? `from:(${list.join(" OR ")})` : `from:${list[0] || ""}`;
+  };
+
   async function runSpec(src, spec) {
-    const q = `from:${src.from} ${src.query || ""} ${spec.labelQuery || ""} has:attachment filename:pdf ${dateQuery(src, "statement")}`.replace(/\s+/g, " ").trim();
+    const q = `${fromQuery(src.from)} ${src.query || ""} ${spec.labelQuery || ""} has:attachment filename:pdf ${dateQuery(src, "statement")}`.replace(/\s+/g, " ").trim();
     setLog(`Searching ${esc(spec.cardLabel)}…`);
     const ids = await GM.searchMessages(q, 60);
     stats.emails += ids.length;
