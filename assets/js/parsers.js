@@ -310,12 +310,84 @@ export function parseStatementLines(lines, opts = {}) {
 // config entry so every bank tags its transactions correctly. The generic
 // table parser handles all layouts today; add a `case` here when a specific
 // bank needs custom handling.
+// ---------------------------------------------------------------------------
+// HDFC credit card. Its table defeats the generic reader on three counts:
+//   - every row ends with the Purchase Indicator column's bullet, which pdf.js
+//     renders as a bare "l", so the amount is never at the end of the line;
+//   - the rupee sign renders as "C", and a credit is marked by a leading "+"
+//     rather than a CR suffix;
+//   - fee, tax and payment descriptions wrap: the text sits on the line ABOVE
+//     the date, and the reference closes on the line below.
+//         IGST-VPS2728962146633-RATE 18.0 -08 (Ref#
+//         15/10/2026| 00:00 C 162.00 l
+//         19999999981015999140940)
+// Rows are anchored on "dd/mm/yyyy| hh:mm", which nothing else on the page
+// starts with, so this reads the table and nothing but the table.
+// ---------------------------------------------------------------------------
+const HDFC_ROW = /^(\d{2})\/(\d{2})\/(\d{4})\s*\|\s*\d{1,2}:\d{2}\s*(.*?)\s*(\+\s*)?C\s*([\d,]+\.\d{2})\s*(?:l\s*)?$/;
+// Lines that sit above a row but are not its description: column headings,
+// the cardholder banner, and the closing half of the previous row's reference.
+const HDFC_NOT_DESC = /^(DATE & TIME|Domestic Transactions|International Transactions)|\[CKYC ID|^\S*\d{6,}\)$|^\d+ \]$/i;
+
+function hdfcDescription(text) {
+  let d = String(text || "")
+    .replace(/\(Ref#[^)]*\)?/gi, " ")             // reference, closed or wrapped open
+    .replace(/\s+[A-Z]{3}\s+[\d,]+\.\d{2}$/, "")    // foreign amount ahead of the INR one
+    .replace(/PAYMENT(?=[A-Z][a-z])/, "PAYMENT ")   // "PAYMENTNet Banking", glued by the PDF
+    .replace(/\s+/g, " ").trim();
+  // "IGST-VPS2728962146633-RATE 18.0 -08" is the tax line on a fee. Named plain
+  // GST so the fee linker recognises it, as it does other banks' GST rows.
+  if (/^[ICS]GST\b/i.test(d)) return "GST";
+  // A UPI spend on a credit card is always a merchant payment (RuPay cards
+  // cannot pay people), but the "UPI-" prefix sends it down the person-to-
+  // person path in guessCategory and files it under Cash & Transfers.
+  d = d.replace(/^UPI-/i, "");
+  return tidyMerchant(cleanMerchant(d));
+}
+
+function parseHdfcCard(lines, opts) {
+  const L = lines.map((l) => String(l).replace(/\s+/g, " ").trim());
+  const head = L.find((l) => /Credit Card No\./i.test(l)) || "";
+  const card4 = (head.match(/(\d{4})\s*$/) || [])[1] || null;
+  const out = [];
+  for (let i = 0; i < L.length; i++) {
+    const m = L[i].match(HDFC_ROW);
+    if (!m) continue;
+    const [, dd, mm, yyyy, own, plus, amt] = m;
+    let text = own;
+    if (!text) {
+      const prev = L[i - 1] || "";
+      if (prev && !HDFC_ROW.test(prev) && !HDFC_NOT_DESC.test(prev)) text = prev;
+    }
+    const amount = parseFloat(amt.replace(/,/g, ""));
+    if (!isFinite(amount) || amount === 0) continue;
+    const description = hdfcDescription(text);
+    out.push({
+      date: iso(+yyyy, +mm, +dd),
+      description: description || "HDFC transaction",
+      amount,
+      currency: opts.currency,
+      kind: plus ? "credit" : "expense",
+      card: opts.card,
+      cardHolder: null,
+      card4,
+      // Anchored on a row shape nothing else on the page has, so a match is a
+      // transaction; only a missing description is worth a second look.
+      confidence: description ? 0.9 : 0.4,
+      needsReview: !description,
+      reviewReason: description ? "" : "No description found for this row",
+    });
+  }
+  return out;
+}
+
 export function parseStatementByBank(bank, lines, opts = {}) {
   const base = { currency: opts.currency || null, card: opts.card || "Statement" };
   // Wio's transaction column signs purchases as NEGATIVE and payments/credits
   // (repayments, reversals) as POSITIVE — the opposite of most statements — so
   // tell the parser to read the sign that way.
   if (bank === "wio") base.negIsExpense = true;
+  if (bank === "hdfc-cc") return parseHdfcCard(lines, base);
   let rows = parseStatementLines(lines, base);
   if (bank === "wio") rows = rows.map(cleanWioRow);
   // If the statement is split into per-card sections (primary + add-on cards),
@@ -704,6 +776,42 @@ export function parseStatementSummary(bank, lines) {
     if (!out.card4) {
       const c = find(/^Card No:/i);
       if (c) out.card4 = (c.match(/\*+(\d{4})\b/) || [])[1];
+    }
+  }
+
+  if (bank === "hdfc-cc") {
+    // "22 Oct, 2026" — HDFC's only date format outside the transaction table.
+    const longDate = (str) => {
+      const m = String(str || "").match(/\b(\d{1,2})\s+([A-Za-z]{3})[a-z]*,?\s+(\d{4})\b/);
+      const mo = m && MONTHS[m[2].toLowerCase()];
+      return mo ? `${m[3]}-${String(mo).padStart(2, "0")}-${m[1].padStart(2, "0")}` : undefined;
+    };
+    const card = find(/Credit Card No\./i);
+    if (card) out.card4 = (card.match(/(\d{4})\s*$/) || [])[1];
+    const sd = find(/^Statement Date\b/i);
+    if (sd) out.statementDate = longDate(sd);
+    // The account summary is printed as a sum:
+    //   C 12,434.43 C 13,529.43 + C 1,257.00 + C 552.32 = C 714.00
+    //   previous dues, payments, purchases, finance charges = total due.
+    const eq = find(/=\s*C\s*[\d,]+\.\d{2}/);
+    if (eq) {
+      const [lhs, rhs] = eq.split("=");
+      out.totalDue = numsIn(rhs)[0];
+      const n = numsIn(lhs);
+      if (n.length) out.previousBalance = n[0];
+    }
+    // Under "MINIMUM DUE DUE DATE": one line with the minimum and the due date,
+    // one with the three limits. Told apart by whether a date is on the line,
+    // not by position, so a reordering by pdf.js does not swap them.
+    const mi = findIdx(/MINIMUM DUE\s+DUE DATE/i);
+    for (let i = mi + 1; mi >= 0 && i < Math.min(L.length, mi + 4); i++) {
+      const d = longDate(L[i]);
+      if (d && out.dueDate === undefined) {
+        out.dueDate = d;
+        out.minDue = numsIn(L[i].replace(/\d{1,2}\s+[A-Za-z]{3}[a-z]*,?\s+\d{4}/, " "))[0];
+      } else if (!d && out.creditLimit === undefined && numsIn(L[i]).length >= 3) {
+        out.creditLimit = numsIn(L[i])[0];
+      }
     }
   }
 
