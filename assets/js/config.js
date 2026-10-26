@@ -146,6 +146,15 @@ export const SOURCES = [
     // parse attachments whose filename contains "statement" (fileMatch).
     query: "subject:statement", fileMatch: "statement",
     passwordHint: "Usually not password-protected — leave blank. If prompted, check the Wio app." },
+  // HDFC emails card statements from a cards-specific address, so no subject
+  // filter is needed to keep the account statements out — those come from
+  // hdfcbanksmartstatement@ instead. The subject carries the card product
+  // ("PhonePe Ultimo HDFC Bank Credit Card Statement - October-2026"); if a
+  // second HDFC card ever arrives, split them the way Axis is split rather
+  // than letting both land under one label.
+  { bank: "hdfc-cc", label: "HDFC Credit Card", kind: "statement", default: true,
+    from: "Emailstatements.cards@hdfcbank.bank.in", currency: "INR",
+    passwordHint: "Check the HDFC email for the exact password format." },
   // --- Bank-account statements (off by default; enable if you want them).
   //     `acct: true` groups them separately from credit cards in Settings. ---
   { bank: "axis-acct", label: "Axis Bank A/c Statement", kind: "statement", default: false, acct: true,
