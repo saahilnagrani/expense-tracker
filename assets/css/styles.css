@@ -671,14 +671,16 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
    bulky; the chip itself carries the on/off state (lit vs dimmed) and the
    hidden input keeps the native label-click + change event working. */
 .dash-cats { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.dash-cats .mini {
+/* .dcat-head too: the picker panels live on <body>, outside .dash-cats, so
+   their All / None / Clear buttons fell back to the browser's default look. */
+.dash-cats .mini, .dcat-head .mini {
   appearance: none; border: 1px solid var(--border); background: var(--chip); color: var(--muted);
   font: inherit; font-size: 12px; font-weight: 700; line-height: 1;
   padding: 6px 11px; border-radius: 999px; cursor: pointer;
   transition: color .15s ease, border-color .15s ease;
 }
-.dash-cats .mini:hover { color: var(--text); border-color: color-mix(in srgb, var(--brand) 45%, var(--border)); }
-.dash-cats .mini:active { transform: translateY(1px); }
+.dash-cats .mini:hover, .dcat-head .mini:hover { color: var(--text); border-color: color-mix(in srgb, var(--brand) 45%, var(--border)); }
+.dash-cats .mini:active, .dcat-head .mini:active { transform: translateY(1px); }
 .dot { width: 9px; height: 9px; border-radius: 3px; flex: none; display: inline-block; }
 
 /* Collapsed summary button — the colour dots double as the chart legend. */
@@ -916,3 +918,20 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
 .src-stat:last-child { border-bottom: 0; }
 .src-stat span:last-child { color: var(--muted); white-space: nowrap; }
 .src-stat.bad span:last-child { color: var(--warn); font-weight: 700; }
+
+/* ---- Expenses multi-select filters -------------------------------------- */
+/* A filter with picks in it reads as on at a glance, so a collapsed row of
+   "All …" buttons is never mistaken for an unfiltered list. */
+.msel { display: inline-flex; align-items: center; min-width: 0; }
+.msel .cs-lab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msel.on {
+  border-color: color-mix(in srgb, var(--brand) 60%, var(--border));
+  background-color: color-mix(in srgb, var(--brand) 9%, var(--panel-2));
+  color: var(--brand); font-weight: 600;
+}
+.dcat-n { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; flex: none; }
+/* The dashboard picker starts with everything ticked, so it greys what you
+   untick. A filter starts with nothing ticked — greying would make the whole
+   list look disabled — so here a tick is what stands out instead. */
+.msel-panel .dcat-opt:has(input:not(:checked)) .dcat-nm { color: var(--text); }
+.msel-panel .dcat-opt:has(input:checked) .dcat-nm { color: var(--brand); font-weight: 600; }
