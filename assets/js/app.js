@@ -589,6 +589,75 @@ function onCatResize() {
   if (catPanel && window.innerWidth !== catPanel.w) closeCatPanel();
 }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCatPanel(); });
+
+// Mount a checklist panel built by the caller: a dropdown under `btn` on a wide
+// screen, a bottom sheet on a phone (a long list is far easier to work through
+// one-handed). Both the dashboard's category picker and the Expenses filters
+// use it, and both go through catPanel, so only one panel is ever open.
+function mountFloatingPanel(el, btn, sheet) {
+  document.body.appendChild(el);
+  let backdrop = null;
+  if (sheet) {
+    backdrop = document.createElement("div");
+    backdrop.className = "dcat-backdrop";
+    document.body.appendChild(backdrop);
+    backdrop.addEventListener("click", closeCatPanel);
+  } else {
+    const r = btn.getBoundingClientRect();
+    el.style.minWidth = Math.max(230, r.width) + "px";
+    const ph = el.offsetHeight, below = window.innerHeight - r.bottom;
+    el.style.top = ((below >= ph + 8 || below >= r.top) ? r.bottom + 6 : Math.max(8, r.top - ph - 6)) + "px";
+    let left = r.left;
+    if (left + el.offsetWidth > window.innerWidth - 8) left = Math.max(8, window.innerWidth - el.offsetWidth - 8);
+    el.style.left = left + "px";
+  }
+  catPanel = { el, backdrop, btn, w: window.innerWidth, sheet };
+  btn.setAttribute("aria-expanded", "true");
+  el.querySelector("[data-pclose]")?.addEventListener("click", closeCatPanel);
+  const s = el.querySelector(".dcat-search");
+  if (s) {
+    if (!sheet) s.focus(); // on touch this would pop the keyboard over the sheet
+    s.addEventListener("input", () => {
+      const q = s.value.trim().toLowerCase();
+      el.querySelectorAll(".dcat-opt").forEach((o) => {
+        o.style.display = !q || o.dataset.nm.includes(q) ? "" : "none";
+      });
+    });
+  }
+  setTimeout(() => document.addEventListener("click", onCatDocClick), 0);
+  if (!sheet) window.addEventListener("scroll", onCatScroll, true);
+  window.addEventListener("resize", onCatResize);
+}
+
+// Pick several values from one list. `selected` is a Set of option values;
+// onChange receives the new Set on every tick, so the caller can repaint live
+// while the panel stays open. Nothing ticked means no filter at all.
+function openMultiPanel(btn, { title, options, selected, onChange }) {
+  closeCatPanel();
+  const sheet = window.matchMedia("(max-width: 640px)").matches;
+  const el = document.createElement("div");
+  el.className = "dcat-panel msel-panel " + (sheet ? "sheet" : "pop");
+  el.innerHTML = `
+    <div class="dcat-head">
+      <span class="dcat-title">${esc(title)}</span>
+      <button type="button" class="mini" data-pclear>Clear</button>
+      ${sheet ? `<button type="button" class="icon-btn" data-pclose aria-label="Done">${icon("x", 18)}</button>` : ""}
+    </div>
+    ${options.length > 8 ? `<div class="dcat-search-wrap"><input class="dcat-search" placeholder="Search…" autocomplete="off"></div>` : ""}
+    <div class="dcat-list">${options.map((o) => `<label class="dcat-opt" data-nm="${esc(o.label.toLowerCase())}">
+      <input type="checkbox" class="mselp" value="${esc(o.value)}" ${selected.has(o.value) ? "checked" : ""}>
+      <span class="dcat-nm">${esc(o.label)}</span>
+      ${o.count != null ? `<span class="dcat-n">${o.count}</span>` : ""}
+      <span class="dcat-tick">${icon("check", 15)}</span>
+    </label>`).join("")}</div>`;
+  const emit = () => onChange(new Set([...el.querySelectorAll(".mselp:checked")].map((c) => c.value)));
+  el.querySelectorAll(".mselp").forEach((c) => c.addEventListener("change", emit));
+  el.querySelector("[data-pclear]").addEventListener("click", () => {
+    el.querySelectorAll(".mselp").forEach((c) => { c.checked = false; });
+    emit();
+  });
+  mountFloatingPanel(el, btn, sheet);
+}
 // Categorical palette for the stacked bar chart (distinct, dark-friendly).
 const DASH_PALETTE = ["#4f8cff", "#37c98b", "#f6b73c", "#ef6f6c", "#a985f6", "#22b8cf",
   "#f78fb3", "#8bc34a", "#ff9f5a", "#6ea8fe", "#c4a35a", "#e05fa8", "#5ad1c8", "#d6d64f",
@@ -783,27 +852,6 @@ function renderDashboard() {
         <span class="dcat-nm">${esc(c)}</span>
         <span class="dcat-tick">${icon("check", 15)}</span>
       </label>`).join("")}</div>`;
-    document.body.appendChild(el);
-
-    let backdrop = null;
-    if (sheet) {
-      backdrop = document.createElement("div");
-      backdrop.className = "dcat-backdrop";
-      document.body.appendChild(backdrop);
-      backdrop.addEventListener("click", closeCatPanel);
-    } else {
-      const r = btn.getBoundingClientRect();
-      el.style.minWidth = Math.max(230, r.width) + "px";
-      const ph = el.offsetHeight, below = window.innerHeight - r.bottom;
-      el.style.top = ((below >= ph + 8 || below >= r.top) ? r.bottom + 6 : Math.max(8, r.top - ph - 6)) + "px";
-      let left = r.left;
-      if (left + el.offsetWidth > window.innerWidth - 8) left = Math.max(8, window.innerWidth - el.offsetWidth - 8);
-      el.style.left = left + "px";
-    }
-
-    catPanel = { el, backdrop, btn, w: window.innerWidth, sheet };
-    btn.setAttribute("aria-expanded", "true");
-
     el.querySelectorAll(".dcatp").forEach((chk) => chk.addEventListener("change", () => {
       const next = new Set(curSel());
       chk.checked ? next.add(chk.value) : next.delete(chk.value);
@@ -812,20 +860,7 @@ function renderDashboard() {
     }));
     el.querySelector("[data-pall]")?.addEventListener("click", () => setSel(null));
     el.querySelector("[data-pnone]")?.addEventListener("click", () => setSel(new Set()));
-    el.querySelector("[data-pclose]")?.addEventListener("click", closeCatPanel);
-    const s = el.querySelector(".dcat-search");
-    if (s) {
-      if (!sheet) s.focus(); // on touch this would pop the keyboard over the sheet
-      s.addEventListener("input", () => {
-        const q = s.value.trim().toLowerCase();
-        el.querySelectorAll(".dcat-opt").forEach((o) => {
-          o.style.display = !q || o.dataset.nm.includes(q) ? "" : "none";
-        });
-      });
-    }
-    setTimeout(() => document.addEventListener("click", onCatDocClick), 0);
-    if (!sheet) window.addEventListener("scroll", onCatScroll, true);
-    window.addEventListener("resize", onCatResize);
+    mountFloatingPanel(el, btn, sheet);
   };
 
   views.innerHTML = `
@@ -860,7 +895,10 @@ function emptyState() {
 }
 
 // ---------- Expenses list ----------
-let expFilter = { q: "", month: "", card: "", cat: "", merchant: "", trip: "" };
+// Each facet holds a list of picked values: a row passes a facet when it
+// matches ANY of them, and must pass every facet. An empty list is no filter.
+const emptyExpFilter = () => ({ q: "", month: [], card: [], cat: [], merchant: [], trip: [] });
+let expFilter = emptyExpFilter();
 let expPage = 0;
 const EXP_PAGE = 200; // render at most this many expense rows at once (perf)
 function renderExpenses() {
@@ -878,16 +916,47 @@ function renderExpenses() {
   };
   const catCounts = countBy((e) => e.category || "Uncategorized");
   const merchCounts = countBy((e) => e.description || "—");
+  const cardCounts = Object.fromEntries(countBy((e) => e.card || ""));
+  const monthCounts = Object.fromEntries(countBy((e) => e.date.slice(0, 7)));
+  const tripCounts = Object.fromEntries(countBy((e) => e.trip || "__none__"));
 
+  // What each filter offers, and how its button and chips read.
+  const FACETS = {
+    month: { title: "Months", all: "All months", noun: "months",
+      opts: months.map((m) => ({ value: m, label: fmtMonth(m), count: monthCounts[m] })) },
+    card: { title: "Cards", all: "All cards", noun: "cards",
+      opts: cards.map((c) => ({ value: c, label: c, count: cardCounts[c] })) },
+    cat: { title: "Categories", all: "All categories", noun: "categories",
+      opts: catCounts.map(([c, n]) => ({ value: c, label: c, count: n })) },
+    // "Not on a trip" is a value like any other, so it combines with real trips.
+    trip: { title: "Trips", all: "All trips", noun: "trips",
+      opts: [{ value: "__none__", label: "Not on a trip", count: tripCounts.__none__ || 0 },
+        ...trips.map((t) => ({ value: t, label: t, count: tripCounts[t] }))] },
+    merchant: { title: "Merchants", all: "All merchants", noun: "merchants",
+      opts: merchCounts.map(([m, n]) => ({ value: m, label: m, count: n })) },
+  };
+  const FACET_KEYS = Object.keys(FACETS).filter((k) => k !== "trip" || trips.length);
+  // Drop picks that no longer exist (a deleted row, a renamed category), or a
+  // filter would go on hiding everything for a value nobody can see to clear.
+  for (const k of Object.keys(FACETS)) {
+    const live = new Set(FACETS[k].opts.map((o) => o.value));
+    expFilter[k] = (expFilter[k] || []).filter((v) => live.has(v));
+  }
+  const optLabel = (k, v) => (FACETS[k].opts.find((o) => o.value === v) || { label: v }).label;
+  const facetLabel = (k) => {
+    const sel = expFilter[k];
+    if (!sel.length) return FACETS[k].all;
+    return sel.length === 1 ? optLabel(k, sel[0]) : `${sel.length} ${FACETS[k].noun}`;
+  };
+
+  const passes = (k, v) => !expFilter[k].length || expFilter[k].includes(v);
   const computeFiltered = () => expenses.filter((e) => {
     if (expFilter.q && !(`${e.description} ${e.card}`.toLowerCase().includes(expFilter.q.toLowerCase()))) return false;
-    if (expFilter.month && e.date.slice(0, 7) !== expFilter.month) return false;
-    if (expFilter.card && e.card !== expFilter.card) return false;
-    if (expFilter.cat && (e.category || "Uncategorized") !== expFilter.cat) return false;
-    if (expFilter.merchant && (e.description || "—") !== expFilter.merchant) return false;
-    // "" = every trip, "__none__" = only rows not on a trip.
-    if (expFilter.trip === "__none__" && e.trip) return false;
-    if (expFilter.trip && expFilter.trip !== "__none__" && e.trip !== expFilter.trip) return false;
+    if (!passes("month", e.date.slice(0, 7))) return false;
+    if (!passes("card", e.card)) return false;
+    if (!passes("cat", e.category || "Uncategorized")) return false;
+    if (!passes("merchant", e.description || "—")) return false;
+    if (!passes("trip", e.trip || "__none__")) return false;
     return true;
   });
 
@@ -908,11 +977,7 @@ function renderExpenses() {
       </div>
       <div class="fchips" id="fChips"></div>
       <div class="filters-panel" id="fPanel">
-        <select id="fmonth" class="fsel"><option value="">All months</option>${months.map((m) => `<option value="${m}" ${expFilter.month === m ? "selected" : ""}>${fmtMonth(m)}</option>`).join("")}</select>
-        <select id="fcard" class="fsel"><option value="">All cards</option>${cards.map((c) => `<option ${expFilter.card === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
-        <select id="fcat" class="fsel"><option value="">All categories</option>${catCounts.map(([c, n]) => `<option value="${esc(c)}" ${expFilter.cat === c ? "selected" : ""}>${esc(c)} (${n})</option>`).join("")}</select>
-        ${trips.length ? `<select id="ftrip" class="fsel"><option value="">All trips</option><option value="__none__" ${expFilter.trip === "__none__" ? "selected" : ""}>Not on a trip</option>${trips.map((t) => `<option value="${esc(t)}" ${expFilter.trip === t ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>` : ""}
-        <select id="fmerchant" class="fsel"><option value="">All merchants</option>${merchCounts.map(([m, n]) => `<option value="${esc(m)}" ${expFilter.merchant === m ? "selected" : ""}>${esc(m)} (${n})</option>`).join("")}</select>
+        ${FACET_KEYS.map((k) => `<button type="button" class="cs-btn fsel msel" data-k="${k}" aria-haspopup="true" aria-expanded="false"><span class="cs-lab">${esc(facetLabel(k))}</span></button>`).join("")}
         <div class="panel-foot">
           <button class="btn sm secondary" id="fclear">Clear all</button>
           <button class="btn sm only-narrow" id="fDone">Show</button>
@@ -992,32 +1057,46 @@ function renderExpenses() {
   };
 
   $("#fq").addEventListener("input", (e) => { expFilter.q = e.target.value; expPage = 0; debouncedExp(paintExp); });
-  // ftrip only exists once something is tagged with a trip, hence the ?.
-  ["fmonth", "fcard", "fcat", "fmerchant", "ftrip"].forEach((id) => $("#" + id)?.addEventListener("change", (e) => {
-    expFilter[id.slice(1)] = e.target.value; expPage = 0; paintExp();
+  // Each filter button opens a checklist. Ticking repaints the table live and
+  // the panel stays open, so several values can be picked in one go.
+  $$(".msel").forEach((btn) => btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const k = btn.dataset.k;
+    if (catPanel && catPanel.btn === btn) { closeCatPanel(); return; }
+    openMultiPanel(btn, {
+      title: FACETS[k].title,
+      options: FACETS[k].opts,
+      selected: new Set(expFilter[k]),
+      onChange: (set) => {
+        // Keep the list's own order rather than the order things were ticked.
+        expFilter[k] = FACETS[k].opts.map((o) => o.value).filter((v) => set.has(v));
+        expPage = 0; paintExp();
+      },
+    });
   }));
-  // A count on the button says how many filters are on; the chips say which,
-  // which a bare number can't — and each one clears itself, so the permanent
-  // Clear button is only needed inside the panel.
-  const FILTER_LABELS = { month: "", card: "", cat: "", merchant: "", trip: "" };
+  // A count on the button says how many values are picked; the chips say
+  // which — one per value, each clearing just itself — so the permanent Clear
+  // button is only needed inside the panel.
   function paintFilterState(shown) {
-    const active = Object.keys(FILTER_LABELS).filter((k) => expFilter[k]);
+    const picks = FACET_KEYS.flatMap((k) => expFilter[k].map((v) => [k, v]));
     const cnt = $("#fCount");
-    if (cnt) { cnt.textContent = String(active.length); cnt.hidden = active.length === 0; }
+    if (cnt) { cnt.textContent = String(picks.length); cnt.hidden = picks.length === 0; }
     const done = $("#fDone");
     if (done) done.textContent = `Show ${shown}`;
+    $$(".msel").forEach((b) => {
+      const lab = b.querySelector(".cs-lab");
+      if (lab) lab.textContent = facetLabel(b.dataset.k);
+      b.classList.toggle("on", expFilter[b.dataset.k].length > 0);
+    });
     const box = $("#fChips");
     if (!box) return;
-    box.innerHTML = active.map((k) => {
-      const v = k === "month" ? fmtMonth(expFilter[k])
-        : k === "trip" && expFilter[k] === "__none__" ? "Not on a trip"
-        : expFilter[k];
-      return `<button type="button" class="fchip" data-k="${k}">${esc(v)}<span aria-hidden="true">✕</span><span class="sr-only"> — remove filter</span></button>`;
-    }).join("");
+    box.innerHTML = picks.map(([k, v]) =>
+      `<button type="button" class="fchip" data-k="${k}" data-v="${esc(v)}">${esc(optLabel(k, v))}<span aria-hidden="true">✕</span><span class="sr-only"> — remove filter</span></button>`
+    ).join("");
     $$("#fChips .fchip").forEach((b) => b.addEventListener("click", () => {
-      expFilter[b.dataset.k] = "";
-      const sel = $("#f" + (b.dataset.k === "cat" ? "cat" : b.dataset.k));
-      if (sel) sel.value = "";
+      const k = b.dataset.k;
+      expFilter[k] = expFilter[k].filter((v) => v !== b.dataset.v);
+      closeCatPanel(); // an open checklist would now show a stale tick
       expPage = 0; paintExp();
     }));
   }
@@ -1035,7 +1114,7 @@ function renderExpenses() {
     const open = expHost.classList.toggle("more-open");
     $("#expMore").setAttribute("aria-expanded", String(open));
   });
-  $("#fclear").addEventListener("click", () => { expFilter = { q: "", month: "", card: "", cat: "", merchant: "", trip: "" }; expPage = 0; renderExpenses(); });
+  $("#fclear").addEventListener("click", () => { closeCatPanel(); expFilter = emptyExpFilter(); expPage = 0; renderExpenses(); });
   $("#expCsv").addEventListener("click", () => exportCsv(computeFiltered()));
   $("#addTxn").addEventListener("click", () => openAddTxn(cards));
   // Operates on whatever the filters currently show, so narrowing to one row
