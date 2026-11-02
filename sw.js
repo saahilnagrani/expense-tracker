@@ -4,7 +4,7 @@
 // Google API / sign-in requests are same-origin? No — they are cross-origin and
 // pass straight through untouched.
 
-const CACHE = "et-cache-v110";
+const CACHE = "et-cache-v111";
 const CORE = [
   "./",
   "./index.html",

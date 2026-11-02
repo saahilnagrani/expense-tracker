@@ -1003,3 +1003,5 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
 .xs-btns .btn { flex: 1; min-height: 44px; }
 .xs-del { color: var(--bad) !important; }
 @media (prefers-reduced-motion: reduce) { .xs-sheet, .xs-backdrop { animation: none; } }
+/* A card in credit: the bank owes you, so it reads as money coming back. */
+.cc-amt.cc-credit { color: var(--good); }
