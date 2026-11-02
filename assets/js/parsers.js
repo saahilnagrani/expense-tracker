@@ -647,6 +647,20 @@ function datesIn(line) {
 // Bare numbers on a line, ignoring anything glued to letters.
 const numsIn = (line) => (line.match(/(?<![\w.])\d[\d,]*\.\d{2}(?![\w.])|(?<![\w.])\d[\d,]*(?![\w.\d])/g) || []).map(num).filter((n) => n !== undefined);
 
+// The last amount on a line, keeping its sign. numsIn reads digits only, so a
+// balance in your favour ("-28.31", or "28.31CR" / "28.31-" where a bank
+// prints it that way) came out as money owed.
+function lastSignedAmount(line) {
+  const s = String(line || "");
+  const m = [...s.matchAll(/\d[\d,]*\.\d{2}/g)].pop();
+  if (!m) return undefined;
+  const before = s.slice(Math.max(0, m.index - 2), m.index);
+  const after = s.slice(m.index + m[0].length);
+  const neg = /-\s?$/.test(before) || /^\s*(?:CR\b|Cr\b|-(?!\d))/.test(after);
+  const v = num(m[0]);
+  return v === undefined ? undefined : (neg ? -v : v);
+}
+
 export function parseStatementSummary(bank, lines) {
   const L = lines.map((l) => String(l).replace(/\s+/g, " ").trim()).filter(Boolean);
   const find = (re) => L.find((l) => re.test(l));
@@ -661,11 +675,11 @@ export function parseStatementSummary(bank, lines) {
     // carrying both the statement date and the amount owed.
     const nb = find(/NEW BALANCE OUTSTANDING/i);
     if (nb) {
-      out.totalDue = numsIn(nb).pop();
+      out.totalDue = lastSignedAmount(nb);
       out.statementDate = datesIn(nb)[0];
     }
     const prev = find(/PREVIOUS BALANCE OUTSTANDING/i);
-    if (prev) out.previousBalance = numsIn(prev).pop();
+    if (prev) out.previousBalance = lastSignedAmount(prev);
     // The due date sits in the address block, sometimes on its own line and
     // sometimes glued to the city, depending how long the address is. Both
     // samples agree on this much: the header holds exactly two short dates,

@@ -2255,7 +2255,10 @@ function sortDues(cards, mode, today) {
   //   0  due today or later, soonest first     — what you came here for
   //   1  already past, most recent first       — the further back, the less it says
   //   2  no due date on the statement          — nothing to sort by at all
-  const rank = (c) => (!c.latest.dueDate ? 2 : c.latest.dueDate >= today ? 0 : 1);
+  // A card that owes nothing (paid off, or in credit) is not "next" either,
+  // whatever date its statement printed, so it waits with the past ones.
+  const owesNothing = (c) => c.latest.totalDue !== undefined && c.latest.totalDue <= 0;
+  const rank = (c) => (!c.latest.dueDate ? 2 : c.latest.dueDate >= today && !owesNothing(c) ? 0 : 1);
   return cards.sort((a, b) => {
     const ra = rank(a), rb = rank(b);
     if (ra !== rb) return ra - rb;
@@ -2294,7 +2297,9 @@ function renderDues() {
   }
 
   const dueIn = (d) => Math.round((new Date(d) - new Date(today)) / 86400000);
-  const total = cards.reduce((a, c) => a + (toBase(c.latest.totalDue || 0, c.latest.currency || settings.baseCurrency, settings) || 0), 0);
+  // Credit on one card cannot pay another card's bill, so a card in credit
+  // adds nothing here rather than being netted off what you owe elsewhere.
+  const total = cards.reduce((a, c) => a + Math.max(0, toBase(c.latest.totalDue || 0, c.latest.currency || settings.baseCurrency, settings) || 0), 0);
 
   // Built here so the control row can decide whether it has anything to show.
   const sortSeg = cards.length > 1
@@ -2314,13 +2319,16 @@ function renderDues() {
     // the app cannot know. Amber marks a date coming up in the next week only:
     // a due date long past almost certainly was paid, and colouring it would be
     // the closest thing to the payment status we deliberately don't infer.
-    const due = latest.dueDate
+    const inCredit = latest.totalDue < 0;
+    const due = inCredit
+      ? `<span class="hint">in credit · nothing to pay</span>`
+      : latest.dueDate
       ? `<span class="${days !== null && days >= 0 && days <= 7 ? "due-soon" : "hint"}">pay by ${fmtDate(latest.dueDate)}${days !== null && days >= 0 && days <= 14 ? ` · ${days}d` : ""}</span>`
       : `<span class="hint">no due date on the statement</span>`;
     const settled = latest.closingBalance === 0 && latest.totalDue > 0;
     return `<div class="ccard">
       <div class="cc-r1"><span class="cc-nm">${esc(card)}</span>${latest.card4 ? `<span class="cc-l4">···${esc(latest.card4)}</span>` : ""}</div>
-      <div class="cc-r1"><span class="cc-amt">${money(latest.totalDue, latest.currency)}</span>${due}</div>
+      <div class="cc-r1"><span class="cc-amt${inCredit ? " cc-credit" : ""}">${money(latest.totalDue, latest.currency)}</span>${due}</div>
       <div class="meta">Statement ${fmtDate(latest.statementDate)}${latest.minDue !== undefined ? ` · min ${money(latest.minDue, latest.currency)}` : ""}${settled ? ` · <b>settled by autopay</b>` : ""}</div>
       ${history.length ? `<details class="cc-more"><summary>${history.length} earlier statement${history.length > 1 ? "s" : ""}</summary>
         <div class="st-list">${history.map(stRow).join("")}</div></details>` : ""}
