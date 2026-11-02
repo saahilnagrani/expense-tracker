@@ -223,6 +223,34 @@ function pwList() {
   </div>`;
 }
 
+// One colour per category, the same on every tab. Assigned over every category
+// that exists (sorted), not over whatever one view happens to show, so a
+// category keeps its colour when the period or the filters change. Returns a
+// lookup, so a render builds the list once rather than once per row.
+function catColors() {
+  const all = [...new Set([...(settings.categories || []),
+    ...expenses.map((e) => e.category || "Uncategorized"), "Uncategorized"])].sort();
+  const map = new Map(all.map((c, i) => [c, DASH_PALETTE[i % DASH_PALETTE.length]]));
+  return (c) => map.get(c || "Uncategorized") || "#8aa0b2";
+}
+
+// A one-line row has room for a short card name: "ADCB Credit Card" -> ADCB,
+// "ENBD Noon Visa (Harshita)" -> NOON. Banks issuing several cards are named
+// by product, which is what tells their cards apart.
+function cardCode(label) {
+  const w = String(label || "").replace(/\s*\([^)]*\)\s*$/, "").trim().split(/\s+/);
+  if (!w[0]) return "";
+  const byProduct = /^(enbd|axis|emirates)$/i.test(w[0]) && w[1] && !/^(credit|bank|card|a\/c)$/i.test(w[1]);
+  return (byProduct ? w[1] : w[0]).toUpperCase().slice(0, 7);
+}
+// The second person's rows carry their initial instead of "(Name)" in the
+// card label. Your own rows carry none, so the mark means "not mine".
+function ownerInitial(e) {
+  const named = String(e.card || "").match(/\(([^)]+)\)\s*$/);
+  if (named) return named[1].trim().charAt(0).toUpperCase();
+  return e.owner === "spouse" ? (settings.spouseName || "?").trim().charAt(0).toUpperCase() : "";
+}
+
 function spendBase(e) {
   const b = toBase(e.amount, e.currency, settings);
   if (b == null) return null;
@@ -306,6 +334,7 @@ const VIEW_ALIASES = { cards: "dues" };
 function go(view, { keepScroll = false } = {}) {
   view = VIEW_ALIASES[view] || view;
   closeCatPanel(); // it lives on <body>, so it would outlive the view that owns it
+  closeExpSheet();
   const y = window.scrollY;
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
   location.hash = view;
@@ -700,10 +729,8 @@ function renderDashboard() {
   const cell = (v) => v ? num(v) : '<span class="muted">—</span>';
   const colLabel = dashGran === "year" ? "Year" : dashGran === "week" ? "Week" : "Month";
 
-  // Stable colour per category (assigned A–Z so it doesn't shift on toggles).
-  const colorMap = {};
-  [...cats].sort().forEach((c, i) => (colorMap[c] = DASH_PALETTE[i % DASH_PALETTE.length]));
-  const dashColor = (c) => colorMap[c] || "#8aa0b2";
+  // Same colour per category as the Expenses rows, and stable across periods.
+  const dashColor = catColors();
 
   // Segmented controls: one connected track per choice, far more compact than
   // a row of standalone pill buttons (and reads as a single either/or control).
@@ -985,7 +1012,8 @@ function renderExpenses() {
       </div>
       <div class="hint mt" id="expCount"></div>
       <div id="expPagerTop" class="flex mt pager" style="align-items:center;gap:10px"></div>
-      <div class="table-wrap mt">
+      <div class="exp-list mt" id="expList"></div>
+      <div class="table-wrap exp-table-wrap mt">
         <table class="data tbl-exp">
           <thead><tr>
             <th>Date</th><th>Description</th><th>Category</th><th>Card / Source</th>
@@ -1007,6 +1035,8 @@ function renderExpenses() {
     $("#expCount").innerHTML = `${filtered.length} transaction(s) · spend total ${fmtBase(totalBase, settings)}`;
     paintFilterState(filtered.length);
     $("#expBody").innerHTML = pageRows.map(rowHtml).join("") || `<tr><td colspan="8" class="hint" style="padding:24px">No matching transactions.</td></tr>`;
+    $("#expList").innerHTML = dayListHtml(pageRows);
+    $$("#expList .exp-row").forEach((b) => b.addEventListener("click", () => openExpSheet(b.dataset.id)));
     // Same pager above and below the table, so you can page without scrolling
     // to the far end of a 200-row page.
     const pagerHtml = pages > 1 ? `
@@ -1154,6 +1184,121 @@ function rowHtml(e) {
     <td data-c="del" class="right"><button class="icon-btn del" data-id="${e.id}" title="Delete">${icon("trash",16)}</button></td>
   </tr>`;
 }
+// ---- Expenses on a phone: grouped by day, one line per transaction --------
+// The table above turns into a stack of cards on a phone, at about 125px a
+// row. Here the date is said once per day, a dot carries the category and a
+// short code the card, so a row is a single line. Everything you can change
+// about a row lives in the sheet a tap opens.
+// "Thu 22 Oct", with the year only when it isn't this year. Built by hand:
+// toLocaleDateString adds a comma once a year is included ("Tue, 30 Dec 2025").
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function dayHead(iso) {
+  const d = new Date(iso + "T00:00:00");
+  const y = d.getFullYear() === new Date().getFullYear() ? "" : ` ${d.getFullYear()}`;
+  return `${DAY_NAMES[d.getDay()]} ${d.getDate()} ${MONTH_NAMES[d.getMonth()]}${y}`;
+}
+function dayListHtml(rows) {
+  if (!rows.length) return `<div class="exp-empty">No matching transactions.</div>`;
+  const color = catColors();
+  // Net spend per day, on the same rules as every other total.
+  const net = {};
+  for (const e of rows) net[e.date] = (net[e.date] || 0) + (spendBase(e) || 0);
+  let html = "", day = null;
+  for (const e of rows) {
+    if (e.date !== day) {
+      if (day !== null) html += `</div>`;
+      day = e.date;
+      html += `<div class="exp-day"><span>${esc(dayHead(day))}</span><span class="num">${fmtBase(net[day], settings)}</span></div><div class="exp-grp">`;
+    }
+    const ex = e.category === "Card Payment";
+    const credit = e.kind === "credit";
+    const noRate = toBase(e.amount, e.currency, settings) == null;
+    const ini = ownerInitial(e);
+    html += `<button type="button" class="exp-row${ex ? " ex" : ""}" data-id="${e.id}"${ex ? ' title="Card payment, not counted as spend"' : ""}>
+      <span class="exp-dot" style="background:${color(e.category)}" title="${esc(e.category || "Uncategorized")}"></span>
+      <span class="exp-m"><b>${esc(e.description || "—")}</b><small>${esc(cardCode(e.card))}</small>${ini ? `<span class="exp-av" title="${esc(e.card || "")}">${esc(ini)}</span>` : ""}</span>
+      <span class="exp-amt${credit && !ex ? " pos" : ""}${noRate ? " warn" : ""}"${noRate ? ` title="No ${esc(e.currency)} rate set, so this isn't counted"` : ""}>${credit ? "+" : ""}${fmt(e.amount, e.currency)}</span>
+    </button>`;
+  }
+  return html + `</div>`;
+}
+
+// The edit sheet. Lives on <body> so a repaint of the list behind it (after a
+// category change) leaves it open.
+let expSheet = null;
+function onExpSheetKey(e) { if (e.key === "Escape") closeExpSheet(); }
+function closeExpSheet() {
+  if (!expSheet) return;
+  expSheet.remove();
+  expSheet = null;
+  document.removeEventListener("keydown", onExpSheetKey);
+}
+// Re-render without the page jumping to the top: replacing the view collapses
+// its height for a moment, and the browser clamps the scroll position.
+function rerenderExpensesInPlace() {
+  const y = window.scrollY;
+  renderExpenses();
+  window.scrollTo(0, y);
+  requestAnimationFrame(() => window.scrollTo(0, y));
+}
+function openExpSheet(id) {
+  closeExpSheet();
+  const e = expenses.find((x) => x.id === id);
+  if (!e) return;
+  const base = toBase(e.amount, e.currency, settings);
+  const raw = e.rawDescription && e.rawDescription !== e.description ? e.rawDescription : "";
+  const spendHtml = () => { const st = spendStatus(e); return `<span class="chip spend-${st.cls}">${st.txt}</span><span class="hint">${esc(st.title)}</span>`; };
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `
+    <div class="xs-backdrop" data-xs-close></div>
+    <div class="xs-sheet" role="dialog" aria-modal="true" aria-labelledby="xsTitle">
+      <div class="xs-handle" aria-hidden="true"></div>
+      <div class="xs-head"><b id="xsTitle">${esc(e.description || "—")}</b>
+        <span class="num${e.kind === "credit" ? " pos" : ""}">${e.kind === "credit" ? "+" : ""}${fmt(e.amount, e.currency)}</span></div>
+      <div class="xs-sub">${esc(e.card || "—")} · ${esc(fmtDate(e.date))}${e.currency !== settings.baseCurrency && base != null ? ` · ≈ ${fmtBase(base, settings)}` : ""}</div>
+      ${raw ? `<div class="xs-raw">Statement text: ${esc(raw)}</div>` : ""}
+      <div class="xs-fld"><label for="xsCat">Category</label><select id="xsCat" class="fsel">${catOptionsHtml(e.category)}</select></div>
+      <div class="xs-fld"><span>Trip</span><button type="button" class="btn sm secondary xs-trip" id="xsTrip">${esc(e.trip || "Not on a trip")}</button></div>
+      <div class="xs-fld"><span>Spend</span><span class="xs-spend" id="xsSpend">${spendHtml()}</span></div>
+      <div class="xs-btns">
+        <button type="button" class="btn secondary xs-del" id="xsDel">${icon("trash", 15)} Delete</button>
+        <button type="button" class="btn" id="xsDone">Done</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  expSheet = wrap;
+  document.addEventListener("keydown", onExpSheetKey);
+  wrap.querySelector("[data-xs-close]").addEventListener("click", closeExpSheet);
+  wrap.querySelector("#xsDone").addEventListener("click", closeExpSheet);
+  wrap.querySelector("#xsCat").addEventListener("change", async (ev) => {
+    let val = ev.target.value;
+    if (val === "__new__") {
+      const added = addCategory(window.prompt("New category name:"));
+      if (!added) { ev.target.value = e.category || ""; return; }
+      val = added;
+    }
+    // Your call, not the parser's: a later re-import & replace keeps it.
+    e.category = val; e.categoryEdited = true;
+    e.updatedAt = Date.now(); await putExpense(e); scheduleSync();
+    rerenderExpensesInPlace();
+    // The category decides whether the row counts (Card Payment never does).
+    const sp = wrap.querySelector("#xsSpend"); if (sp) sp.innerHTML = spendHtml();
+    toast("Category updated", "ok");
+  });
+  wrap.querySelector("#xsTrip").addEventListener("click", () => { closeExpSheet(); openAssignTrip([e]); });
+  wrap.querySelector("#xsDel").addEventListener("click", async () => {
+    if (!confirm("Delete this transaction?")) return;
+    await deleteExpense(e.id);
+    await recordDeletion(e.id);
+    expenses = expenses.filter((x) => x.id !== e.id);
+    scheduleSync();
+    closeExpSheet();
+    rerenderExpensesInPlace();
+    toast("Transaction deleted", "ok");
+  });
+}
+
 function srcLabel(s) { return s === "manual" ? "manual" : s === "recurring" ? "recurring" : s === "alert" ? "alert" : "statement"; }
 
 // ---------- Fixed monthly expenses (tab: "Fixed expenses") ----------
