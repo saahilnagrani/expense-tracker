@@ -935,3 +935,71 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .7; cursor: poi
    list look disabled — so here a tick is what stands out instead. */
 .msel-panel .dcat-opt:has(input:not(:checked)) .dcat-nm { color: var(--text); }
 .msel-panel .dcat-opt:has(input:checked) .dcat-nm { color: var(--brand); font-weight: 600; }
+
+/* ---- Expenses on a phone: grouped by day, one line per transaction ------- */
+/* The table stays on wide screens, where its columns fit. On a phone it used
+   to become a stack of ~125px cards; this list replaces it there. */
+.exp-list { display: none; }
+@media (max-width: 640px) {
+  .exp-table-wrap { display: none; }
+  .exp-list { display: block; }
+}
+.exp-day {
+  display: flex; justify-content: space-between; gap: 12px; padding: 14px 4px 6px;
+  font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
+}
+.exp-day:first-child { padding-top: 2px; }
+.exp-grp { background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.exp-row {
+  appearance: none; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px;
+  width: 100%; text-align: left; cursor: pointer;
+  /* 44px: a comfortable thumb target, still about three times today's density */
+  display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  min-height: 44px; padding: 0 12px;
+}
+.exp-row + .exp-row { border-top: 1px solid var(--border); }
+.exp-row:active { background: var(--chip); }
+.exp-row:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.exp-dot { width: 8px; height: 8px; border-radius: 50%; }
+.exp-m { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.exp-m b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.exp-m small { flex: none; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .02em; }
+.exp-av {
+  flex: none; display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%;
+  background: #c0569a; color: #fff; font-size: 9.5px; font-weight: 700;
+}
+.exp-amt { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.exp-amt.pos { color: var(--good); }
+.exp-amt.warn { color: var(--warn); }
+/* Card payments: no badge on one line, so the row reads as dimmed instead. */
+.exp-row.ex b, .exp-row.ex .exp-amt { color: var(--muted); font-weight: 500; }
+.exp-row.ex .exp-dot { background: transparent !important; box-shadow: inset 0 0 0 1.5px var(--muted); }
+.exp-empty { padding: 24px 4px; color: var(--muted); }
+
+/* The edit sheet a row opens. Below .cs-pop (z 60), so the category dropdown
+   inside it opens on top. */
+.xs-backdrop { position: fixed; inset: 0; z-index: 55; background: rgba(0,0,0,.45); animation: fade-in .15s ease-out; }
+.xs-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 56; max-height: 88vh; overflow: auto;
+  background: var(--panel); border-radius: 18px 18px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.28);
+  padding: 8px max(18px, env(safe-area-inset-right, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px));
+  display: grid; gap: 12px; animation: xs-up .18s ease-out;
+}
+@keyframes xs-up { from { transform: translateY(28px); opacity: .5; } }
+.xs-handle { width: 38px; height: 4px; border-radius: 2px; background: var(--border); justify-self: center; }
+.xs-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; font-size: 17px; }
+.xs-head b { min-width: 0; overflow-wrap: anywhere; }
+.xs-head .num { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.xs-head .pos { color: var(--good); }
+.xs-sub { color: var(--muted); font-size: 13px; margin-top: -6px; }
+.xs-raw { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+.xs-fld { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 10px; align-items: center; font-size: 13px; color: var(--muted); }
+.xs-fld > :last-child { min-width: 0; color: var(--text); }
+.xs-fld .cs-btn { width: 100%; }
+.xs-trip { justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xs-spend { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.xs-spend .hint { font-size: 12px; }
+.xs-btns { display: flex; gap: 10px; margin-top: 4px; }
+.xs-btns .btn { flex: 1; min-height: 44px; }
+.xs-del { color: var(--bad) !important; }
+@media (prefers-reduced-motion: reduce) { .xs-sheet, .xs-backdrop { animation: none; } }
